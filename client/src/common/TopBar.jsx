@@ -4,7 +4,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 
-const drawerWidth = 240;
+const drawerWidth = 290;
 
 const TopBar = ({ isClosing, mobileOpen, setMobileOpen }) => {
   const handleDrawerToggle = () => {

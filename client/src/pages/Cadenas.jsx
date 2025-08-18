@@ -1,6 +1,6 @@
 import { Box, CssBaseline, Toolbar } from "@mui/material";
 import ChatWindow from "../cadenas/ChatWindow";
-const drawerWidth = 240;
+const drawerWidth = 290;
 
 const Cadenas = () => {
   return (

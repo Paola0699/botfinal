@@ -2,8 +2,10 @@ import {
   Avatar,
   Box,
   Button,
+  CircularProgress,
   Divider,
   FormControl,
+  IconButton,
   InputLabel,
   List,
   ListItem,
@@ -18,8 +20,9 @@ import {
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import supabase from "../supabaseClient";
+import SendIcon from "@mui/icons-material/Send";
+import PauseIcon from "@mui/icons-material/Pause";
 
-// 🔐 Airtable config
 const API_KEY =
   "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
 const BASE_ID = "appbT7f58H1PLdY11";
@@ -35,8 +38,8 @@ const ChatWindow = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
   const [channelFilter, setChannelFilter] = useState("todos");
+  const [loading, setLoading] = useState(true);
 
-  // Obtener perfiles desde Airtable
   useEffect(() => {
     const fetchAirtableRecords = async () => {
       try {
@@ -49,11 +52,9 @@ const ChatWindow = () => {
             },
           }
         );
-
         if (!response.ok) throw new Error("Error al obtener leads");
 
         const data = await response.json();
-
         const profiles = {};
         data.records.forEach((record) => {
           const senderId = record.fields["sender_id"];
@@ -68,58 +69,36 @@ const ChatWindow = () => {
             };
           }
         });
-
         setUserProfiles(profiles);
       } catch (error) {
         console.error("Error al obtener leads:", error);
       }
     };
-
     fetchAirtableRecords();
   }, []);
 
-  const test = async () => {
+  const handlePauseChat = async () => {
     if (!selectedUser) return;
-
-    const pauseUntil = new Date(Date.now() + 40 * 60 * 1000); // 40 minutos en el futuro
-
-    const { data, error } = await supabase.from("intervenciones_agente").upsert(
-      [
-        {
-          sender_id: selectedUser.id,
-          pause_until: pauseUntil,
-        },
-      ],
-      {
+    const pauseUntil = new Date(Date.now() + 40 * 60 * 1000);
+    await supabase
+      .from("intervenciones_agente")
+      .upsert([{ sender_id: selectedUser.id, pause_until: pauseUntil }], {
         onConflict: ["sender_id"],
-      }
-    );
-
-    if (error) {
-      console.error("Error al pausar el chat:", error);
-    } else {
-      console.log("Chat pausado hasta:", pauseUntil);
-    }
+      });
   };
 
   useEffect(() => {
     const getChatLog = async () => {
       const { data, error } = await supabase.from("chatlog").select("*");
+      if (error) return;
 
-      if (error) {
-        console.error("Error fetching chat log:", error);
-        return;
-      }
-
-      // Agrupar mensajes por session_id
       const groupedBySession = data.reduce((acc, msg) => {
         const sessionId = msg.session_id;
         if (!acc[sessionId]) {
           acc[sessionId] = [];
-          acc[sessionId].canal = msg.canal; // almacenar canal asociado
+          acc[sessionId].canal = msg.canal;
         }
         const createdAt = new Date(msg.created_at);
-
         acc[sessionId].push({
           fromMe: msg.role === "assistant",
           text: msg.content,
@@ -130,25 +109,21 @@ const ChatWindow = () => {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          createdAt, // importante: conservar para ordenamiento posterior
+          createdAt,
         });
-
         return acc;
       }, {});
 
-      // Ordenar mensajes por fecha dentro de cada sesión
       Object.keys(groupedBySession).forEach((sessionId) => {
         groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
       });
 
-      // Crear lista de usuarios y ordenarla por fecha del último mensaje
       const uniqueUsers = Object.keys(groupedBySession)
         .map((sessionId) => {
           const profile = userProfiles[sessionId];
           const lastMessage =
             groupedBySession[sessionId][groupedBySession[sessionId].length - 1];
           const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
-
           return {
             id: sessionId,
             name: profile?.name || sessionId,
@@ -160,12 +135,10 @@ const ChatWindow = () => {
             lastCreatedAt,
           };
         })
-        .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt); // Orden descendente
+        .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
 
-      // Limpiar el campo lastCreatedAt antes de guardar en estado
       setUsers(uniqueUsers.map(({ lastCreatedAt, ...rest }) => rest));
 
-      // Eliminar campo createdAt en mensajes (para que el estado quede limpio)
       const cleanedConversations = {};
       Object.entries(groupedBySession).forEach(([sessionId, messages]) => {
         const canal = groupedBySession[sessionId].canal || "desconocido";
@@ -174,23 +147,21 @@ const ChatWindow = () => {
           messages: messages.map(({ createdAt, ...rest }) => rest),
         };
       });
-
       setConversations(cleanedConversations);
-
       if (uniqueUsers.length > 0) setSelectedUser(uniqueUsers[0]);
+      setLoading(false);
     };
-
     if (Object.keys(userProfiles).length > 0) {
       getChatLog();
     }
   }, [userProfiles]);
+
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedUser) return;
-
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes();
@@ -204,23 +175,17 @@ const ChatWindow = () => {
       { fromMe: true, text: newMessage, time: formattedTime },
     ];
     setSendingMessage(true);
-    // Enviar mensaje al endpoint de Facebook
     try {
       const res = await fetch("/api/send-message", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipientId: selectedUser.id,
           message: newMessage,
         }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        console.error("Error sending message to Facebook:", errorData);
-      } else {
+      if (res.ok) {
         setConversations({
           ...conversations,
           [selectedUser.id]: {
@@ -230,20 +195,17 @@ const ChatWindow = () => {
         });
         const updatedUser = {
           ...selectedUser,
-          lastCreatedAt: new Date(), // usamos esto para ordenar
+          lastCreatedAt: new Date(),
         };
-
-        // Reordenar la lista de usuarios
         const updatedUsers = [
           updatedUser,
           ...users.filter((u) => u.id !== selectedUser.id),
         ];
-
         setUsers(updatedUsers);
         setNewMessage("");
       }
     } catch (err) {
-      console.error("Network error sending message to Facebook:", err);
+      console.error("Error:", err);
     } finally {
       setSendingMessage(false);
     }
@@ -252,7 +214,6 @@ const ChatWindow = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-
   useEffect(() => {
     scrollToBottom();
   }, [currentMessages, selectedUser]);
@@ -261,23 +222,37 @@ const ChatWindow = () => {
     const matchesName = user.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
-
     const canal = conversations[user.id]?.canal || "desconocido";
     const matchesChannel = channelFilter === "todos" || canal === channelFilter;
-
     return matchesName && matchesChannel;
   });
 
-  return (
-    <Box display="flex" height="93dvh">
-      {/* Lista de conversaciones */}
+  if (loading) {
+    return (
+      <Box
+        height="100vh"
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+      >
+        <CircularProgress size={60} />
+      </Box>
+    );
+  }
 
+  return (
+    <Box display="flex" height="93dvh" sx={{ bgcolor: "#f0f2f5" }}>
       <Box
         width={400}
-        height="100%"
-        sx={{ borderRight: "1px solid #eee", bgcolor: "#f9f9f9" }}
+        sx={{ borderRight: "1px solid #eee", bgcolor: "#faf7ff" }}
       >
-        <Paper sx={{ height: "100%", overflowY: "auto", boxShadow: "none" }}>
+        <Paper
+          sx={{
+            height: "100%",
+            overflowY: "auto",
+            boxShadow: "none",
+          }}
+        >
           <Typography variant="h6" p={2}>
             Conversaciones
           </Typography>
@@ -297,7 +272,6 @@ const ChatWindow = () => {
               </Select>
             </FormControl>
           </Box>
-
           <Box px={2} pb={1}>
             <TextField
               fullWidth
@@ -315,7 +289,6 @@ const ChatWindow = () => {
               const userConvo = conversations[user.id];
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
-
               return (
                 <ListItem
                   key={user.id}
@@ -324,9 +297,10 @@ const ChatWindow = () => {
                   onClick={() => setSelectedUser(user)}
                   sx={{
                     "&.Mui-selected": {
-                      backgroundColor: "#e3f2fd",
+                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
                       borderRadius: 2,
                       mx: 1,
+                      color: "white",
                     },
                   }}
                 >
@@ -347,17 +321,13 @@ const ChatWindow = () => {
           </List>
         </Paper>
       </Box>
-
-      {/* Ventana de conversación */}
-      <Box width={800} display="flex" flexDirection="column" height="100%">
+      <Box width={800} display="flex" flexDirection="column">
         <Paper
           sx={{
-            height: "100%",
+            flexGrow: 1,
             display: "flex",
             flexDirection: "column",
-            bgcolor: "#f4f6f8",
-            borderRadius: 0,
-            flexGrow: 1,
+            minHeight: 0, // Añade esta línea
           }}
         >
           <Box
@@ -371,20 +341,29 @@ const ChatWindow = () => {
             }}
           >
             <Avatar src={selectedUser?.avatar} />
-            <Typography variant="h6">{selectedUser?.name}</Typography>
-            <Button onClick={test} variant="contained">
-              Pausar
-            </Button>
+            {/* Aplica flexGrow: 1 a este Typography para que ocupe el espacio restante */}
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>
+              {selectedUser?.name}
+            </Typography>
+            <IconButton onClick={handlePauseChat}>
+              <PauseIcon />
+            </IconButton>
           </Box>
-
-          <Box sx={{ flexGrow: 1, p: 3, overflowY: "auto" }}>
+          <Box
+            sx={{
+              flexGrow: 1,
+              p: 3,
+              overflowY: "auto",
+              minHeight: 0, // Añade esta línea
+            }}
+          >
             <Stack spacing={2}>
               {currentMessages.map((msg, index) => (
                 <Box
                   key={index}
                   sx={{
                     alignSelf: msg.fromMe ? "flex-end" : "flex-start",
-                    bgcolor: msg.fromMe ? "#2563eb" : "#e3ecee",
+                    bgcolor: msg.fromMe ? "#2575FC" : "#e3ecee",
                     color: msg.fromMe ? "#fff" : "#000",
                     px: 2,
                     py: 1,
@@ -406,7 +385,6 @@ const ChatWindow = () => {
             </Stack>
             <div ref={messagesEndRef} />
           </Box>
-
           <Divider />
           <Box sx={{ display: "flex", p: 2, bgcolor: "#fff" }}>
             <TextField
@@ -418,24 +396,21 @@ const ChatWindow = () => {
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               sx={{ borderRadius: 2 }}
             />
-            <Button
+            <IconButton
               onClick={handleSend}
-              variant="contained"
-              sx={{ ml: 2, borderRadius: 3, backgroundColor: "#ff3200" }}
               size="small"
               disabled={sendingMessage}
+              style={{ marginLeft: "1rem" }}
             >
-              Enviar
-            </Button>
+              {" "}
+              <SendIcon />
+            </IconButton>
           </Box>
         </Paper>
       </Box>
-
-      {/* Panel de perfil */}
       <Box
         width={300}
-        height="100%"
-        sx={{ borderLeft: "1px solid #eee", bgcolor: "#f9f9f9" }}
+        sx={{ borderLeft: "1px solid #eee", bgcolor: "#faf7ff" }}
       >
         <Paper sx={{ height: "100%", p: 3, boxShadow: "none" }}>
           <Box textAlign="center" mb={2}>
@@ -443,14 +418,16 @@ const ChatWindow = () => {
               src={selectedUser?.avatar}
               sx={{ width: 80, height: 80, mx: "auto", mb: 1 }}
             />
-            <Typography variant="h6">{selectedUser?.name}</Typography>
+            <Typography style={{ marginTop: "1rem" }} variant="h5">
+              {selectedUser?.name}
+            </Typography>
           </Box>
           <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2">📧 Correo</Typography>
+          <Typography variant="subtitle2">Correo</Typography>
           <Typography variant="body2" mb={2}>
             {selectedUser?.email}
           </Typography>
-          <Typography variant="subtitle2">📞 Teléfono</Typography>
+          <Typography variant="subtitle2">Teléfono</Typography>
           <Typography variant="body2">{selectedUser?.phone}</Typography>
         </Paper>
       </Box>

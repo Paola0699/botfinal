@@ -1,4 +1,4 @@
-import { Box, Grid } from "@mui/material";
+import { Box, CircularProgress, Grid, Toolbar } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import LeadsColumn from "../leads/LeadsColumn";
 
@@ -9,6 +9,7 @@ const TABLE_NAME = "chat-crm";
 
 const Leads = () => {
   const [usersList, setUsersList] = useState([]);
+  const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -16,6 +17,7 @@ const Leads = () => {
     hasFetched.current = true;
 
     const fetchAirtableRecords = async () => {
+      setLoading(true);
       try {
         const response = await fetch(
           `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}`,
@@ -33,6 +35,8 @@ const Leads = () => {
         setUsersList(data.records);
       } catch (error) {
         console.error("Error al obtener leads:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -67,8 +71,22 @@ const Leads = () => {
     }
   });
 
+  if (loading) {
+    return (
+      <Box
+        height="100vh"
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+      >
+        <CircularProgress size={60} />
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ p: 3, backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
+      <Toolbar />
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
           <LeadsColumn

@@ -11,6 +11,7 @@ import {
   Paper,
   Select,
   Stack,
+  Toolbar,
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
@@ -52,80 +53,83 @@ const Plantillas = () => {
   const [proceso, setProceso] = useState(procesos[0]);
 
   return (
-    <Box p={5}>
-      <Paper
-        sx={{
-          height: "100%",
-          overflowY: "auto",
-          boxShadow: "none",
-          padding: 5,
-        }}
-      >
-        <Typography variant="h6" gutterBottom>
-          Lista de Plantillas
-        </Typography>
-        <Typography>
-          Para enviar cadenas masivas debes crear una plantilla, y esta
-          plantilla deberá ser aprobada por META, cada tipo de plantilla tiene
-          un costo diferente. Aquí puedes ver el precio exacto de META.{" "}
-        </Typography>
-        <Button
-          variant="contained"
-          style={{ marginBottom: "1rem", marginTop: "1rem" }}
+    <>
+      <Toolbar />
+      <Box p={5}>
+        <Paper
+          sx={{
+            height: "100%",
+            overflowY: "auto",
+            boxShadow: "none",
+            padding: 5,
+          }}
         >
-          Nueva plantilla
-        </Button>
-        <Divider />
-        <FormControl fullWidth margin="normal">
-          <InputLabel>Selecciona un proceso</InputLabel>
-          <Select
-            value={proceso}
-            label="Selecciona un proceso"
-            onChange={(e) => setProceso(e.target.value)}
+          <Typography variant="h6" gutterBottom>
+            Lista de Plantillas
+          </Typography>
+          <Typography>
+            Para enviar cadenas masivas debes crear una plantilla, y esta
+            plantilla deberá ser aprobada por META, cada tipo de plantilla tiene
+            un costo diferente. Aquí puedes ver el precio exacto de META.{" "}
+          </Typography>
+          <Button
+            variant="contained"
+            style={{ marginBottom: "1rem", marginTop: "1rem" }}
           >
-            {procesos.map((p) => (
-              <MenuItem key={p} value={p}>
-                {p}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Paper>
-      <Stack spacing={2} mt={1}>
-        {plantillas.map((plantilla, index) => (
-          <Card
-            key={index}
-            sx={{
-              borderRadius: 2,
-              boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-              backgroundColor: "#fff",
-            }}
-          >
-            <CardContent>
-              <Typography
-                variant="h6"
-                fontWeight="medium"
-                style={{ fontSize: "1rem" }}
-              >
-                📄 {plantilla.nombre}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Fecha de creación:{" "}
-                {dayjs(plantilla.fechaCreacion).format("DD/MM/YYYY hh:mm A")}
-              </Typography>
-              <Box mt={1}>
-                <Chip
-                  label={plantilla.status}
-                  color={getStatusColor(plantilla.status)}
-                  size="small"
-                  variant="outlined"
-                />
-              </Box>
-            </CardContent>
-          </Card>
-        ))}
-      </Stack>
-    </Box>
+            Nueva plantilla
+          </Button>
+          <Divider />
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Selecciona un proceso</InputLabel>
+            <Select
+              value={proceso}
+              label="Selecciona un proceso"
+              onChange={(e) => setProceso(e.target.value)}
+            >
+              {procesos.map((p) => (
+                <MenuItem key={p} value={p}>
+                  {p}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Paper>
+        <Stack spacing={2} mt={1}>
+          {plantillas.map((plantilla, index) => (
+            <Card
+              key={index}
+              sx={{
+                borderRadius: 2,
+                boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+                backgroundColor: "#fff",
+              }}
+            >
+              <CardContent>
+                <Typography
+                  variant="h6"
+                  fontWeight="medium"
+                  style={{ fontSize: "1rem" }}
+                >
+                  📄 {plantilla.nombre}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Fecha de creación:{" "}
+                  {dayjs(plantilla.fechaCreacion).format("DD/MM/YYYY hh:mm A")}
+                </Typography>
+                <Box mt={1}>
+                  <Chip
+                    label={plantilla.status}
+                    color={getStatusColor(plantilla.status)}
+                    size="small"
+                    variant="outlined"
+                  />
+                </Box>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
+      </Box>
+    </>
   );
 };
 

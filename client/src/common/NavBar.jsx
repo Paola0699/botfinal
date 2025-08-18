@@ -5,12 +5,24 @@ import {
   ListItem,
   ListItemButton,
   ListItemText,
+  ListItemIcon,
   Toolbar,
+  Divider,
+  Button,
 } from "@mui/material";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import TopBar from "./TopBar";
-const drawerWidth = 240;
+import LogoBlanco from "./logo_blanco.png";
+// Importar iconos de MUI
+import LinkIcon from "@mui/icons-material/Link";
+import PeopleIcon from "@mui/icons-material/People";
+import HubIcon from "@mui/icons-material/Hub";
+import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
+import ArticleIcon from "@mui/icons-material/Article";
+import LogoutIcon from "@mui/icons-material/Logout";
+
+const drawerWidth = 290;
 
 const NavBar = (props) => {
   const { window } = props;
@@ -18,15 +30,26 @@ const NavBar = (props) => {
   const [isClosing, setIsClosing] = useState(false);
 
   const sections = [
-    { title: "🪢 Cadenas", id: "cadenas", path: "/cadenas" },
-    { title: "🧲 Leads", id: "leads", path: "/leads" },
+    { title: "Cadenas", id: "cadenas", path: "/cadenas", icon: <LinkIcon /> },
+    { title: "Leads", id: "leads", path: "/leads", icon: <PeopleIcon /> },
     {
-      title: "⛓ Cadenas Masivas",
+      title: "Cadenas Masivas",
       id: "cadenas_masivas",
       path: "/cadenas_masivas",
+      icon: <HubIcon />,
     },
-    { title: "🏋 Training", id: "training", path: "/training" },
-    { title: "🌱 Plantillas", id: "plantillas", path: "/plantillas" },
+    {
+      title: "Training",
+      id: "training",
+      path: "/training",
+      icon: <FitnessCenterIcon />,
+    },
+    {
+      title: "Plantillas",
+      id: "plantillas",
+      path: "/plantillas",
+      icon: <ArticleIcon />,
+    },
   ];
 
   const handleDrawerTransitionEnd = () => {
@@ -46,12 +69,25 @@ const NavBar = (props) => {
 
   const drawer = (
     <div>
-      <Toolbar />
+      <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+        <img
+          src={LogoBlanco}
+          alt="Logo"
+          style={{ width: "120px", objectFit: "contain" }}
+        />
+      </Box>
       <List>
         {sections.map((section) => (
-          <Link key={section.id} to={section.path}>
+          <Link
+            key={section.id}
+            to={section.path}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
             <ListItem disablePadding>
               <ListItemButton>
+                <ListItemIcon sx={{ color: "white" }}>
+                  {section.icon}
+                </ListItemIcon>
                 <ListItemText primary={section.title} />
               </ListItemButton>
             </ListItem>
@@ -60,15 +96,15 @@ const NavBar = (props) => {
       </List>
     </div>
   );
+
   return (
     <>
       <TopBar />
       <Box
         component="nav"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
-        aria-label="mailbox folders"
+        aria-label="sidebar"
       >
-        {/* The implementation can be swapped with js to avoid SEO duplication of links. */}
         <Drawer
           container={container}
           variant="temporary"
@@ -80,12 +116,13 @@ const NavBar = (props) => {
             "& .MuiDrawer-paper": {
               boxSizing: "border-box",
               width: drawerWidth,
-              backgroundColor: "red",
+              backgroundColor: "#3c3c3a",
+              color: "white",
             },
           }}
           slotProps={{
             root: {
-              keepMounted: true, // Better open performance on mobile.
+              keepMounted: true,
             },
           }}
         >
