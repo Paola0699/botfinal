@@ -23,6 +23,13 @@ import supabase from "../supabaseClient";
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
 
+// Importar iconos para los canales
+import InstagramIcon from "@mui/icons-material/Instagram";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import FacebookIcon from "@mui/icons-material/Facebook";
+import LanguageIcon from "@mui/icons-material/Language"; // Para "web" o "website"
+import QuestionMarkIcon from "@mui/icons-material/QuestionMark"; // Para canal desconocido
+
 const API_KEY =
   "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
 const BASE_ID = "appbT7f58H1PLdY11";
@@ -96,6 +103,7 @@ const ChatWindow = () => {
         const sessionId = msg.session_id;
         if (!acc[sessionId]) {
           acc[sessionId] = [];
+          // Asegurarse de que el canal se almacene en la propiedad del objeto de la sesión
           acc[sessionId].canal = msg.canal;
         }
         const createdAt = new Date(msg.created_at);
@@ -227,6 +235,24 @@ const ChatWindow = () => {
     return matchesName && matchesChannel;
   });
 
+  // Función para obtener el icono del canal
+  // Se eliminó el 'ml' de aquí para usar 'gap' en el contenedor padre
+  const getChannelIcon = (channel, size = 16) => {
+    switch (channel?.toLowerCase()) {
+      case "instagram":
+        return <InstagramIcon sx={{ fontSize: size, color: "#E4405F" }} />;
+      case "whatsapp":
+        return <WhatsAppIcon sx={{ fontSize: size, color: "#25D366" }} />;
+      case "facebook":
+        return <FacebookIcon sx={{ fontSize: size, color: "#1877F2" }} />;
+      case "web":
+      case "website":
+        return <LanguageIcon sx={{ fontSize: size, color: "#333" }} />;
+      default:
+        return <QuestionMarkIcon sx={{ fontSize: size, color: "#999" }} />;
+    }
+  };
+
   if (loading) {
     return (
       <Box
@@ -241,7 +267,7 @@ const ChatWindow = () => {
   }
 
   return (
-    <Box display="flex" height="93dvh" sx={{ bgcolor: "#f0f2f5" }}>
+    <Box display="flex" height="100dvh" sx={{ bgcolor: "#f0f2f5" }}>
       <Box
         width={400}
         sx={{ borderRight: "1px solid #eee", bgcolor: "#faf7ff" }}
@@ -289,6 +315,8 @@ const ChatWindow = () => {
               const userConvo = conversations[user.id];
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
+              const canal = userConvo?.canal; // Obtener el canal del usuario
+
               return (
                 <ListItem
                   key={user.id}
@@ -302,6 +330,7 @@ const ChatWindow = () => {
                       mx: 1,
                       color: "white",
                     },
+                    minHeight: 72, // ListItem por defecto tiene 48px, 72px o más para 2 líneas
                   }}
                 >
                   <ListItemAvatar>
@@ -310,9 +339,51 @@ const ChatWindow = () => {
                   <ListItemText
                     primary={user.name}
                     secondary={
-                      lastMsg
-                        ? `${lastMsg.text.slice(0, 60)}... — ${lastMsg.time}`
-                        : ""
+                      lastMsg ? (
+                        // NUEVO: Usar un Box con flexWrap para permitir que el texto se envuelva
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Typography
+                            variant="caption"
+                            component="span" // Importante: hace que se comporte como elemento en línea
+                            sx={
+                              {
+                                // No truncar, permitir que el texto se envuelva
+                                // flexGrow: 1, // Puedes probar esto si quieres que el texto ocupe más espacio
+                              }
+                            }
+                          >
+                            {lastMsg.text.slice(0, 60)}...
+                          </Typography>
+                          {/* Agrupar la hora y el icono para que se mantengan juntos */}
+                          <Box
+                            sx={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 0.5,
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              component="span"
+                              sx={{ flexShrink: 0 }}
+                            >
+                              — {lastMsg.time}
+                            </Typography>
+                            {/* Renderizar el icono del canal aquí */}
+                            {canal && getChannelIcon(canal, 14)}{" "}
+                            {/* Tamaño más pequeño para la lista */}
+                          </Box>
+                        </Box>
+                      ) : (
+                        ""
+                      )
                     }
                   />
                 </ListItem>
@@ -327,7 +398,7 @@ const ChatWindow = () => {
             flexGrow: 1,
             display: "flex",
             flexDirection: "column",
-            minHeight: 0, // Añade esta línea
+            minHeight: 0,
           }}
         >
           <Box
@@ -341,10 +412,12 @@ const ChatWindow = () => {
             }}
           >
             <Avatar src={selectedUser?.avatar} />
-            {/* Aplica flexGrow: 1 a este Typography para que ocupe el espacio restante */}
             <Typography variant="h6" sx={{ flexGrow: 1 }}>
               {selectedUser?.name}
             </Typography>
+            {/* Mostrar el icono del canal aquí (con tamaño por defecto de 20px) */}
+            {selectedUser &&
+              getChannelIcon(conversations[selectedUser.id]?.canal)}
             <IconButton onClick={handlePauseChat}>
               <PauseIcon />
             </IconButton>
@@ -354,7 +427,7 @@ const ChatWindow = () => {
               flexGrow: 1,
               p: 3,
               overflowY: "auto",
-              minHeight: 0, // Añade esta línea
+              minHeight: 0,
             }}
           >
             <Stack spacing={2}>
