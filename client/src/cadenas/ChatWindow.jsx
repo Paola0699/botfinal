@@ -110,10 +110,11 @@ const ChatWindow = () => {
         acc[sessionId].push({
           fromMe: msg.role === "assistant",
           text: msg.content,
+          // MODIFICACIÓN: Cambiar el formato de la fecha y hora a dd/mm/yy hh:mm
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
-            month: "short",
-            year: "numeric",
+            month: "2-digit", // Cambiado de "short" a "2-digit"
+            year: "2-digit", // Cambiado de "numeric" a "2-digit"
             hour: "2-digit",
             minute: "2-digit",
           }),
@@ -236,7 +237,6 @@ const ChatWindow = () => {
   });
 
   // Función para obtener el icono del canal
-  // Se eliminó el 'ml' de aquí para usar 'gap' en el contenedor padre
   const getChannelIcon = (channel, size = 16) => {
     switch (channel?.toLowerCase()) {
       case "instagram":
@@ -330,56 +330,71 @@ const ChatWindow = () => {
                       mx: 1,
                       color: "white",
                     },
-                    minHeight: 72, // ListItem por defecto tiene 48px, 72px o más para 2 líneas
+                    minHeight: 72, // Asegura espacio para dos líneas
                   }}
                 >
                   <ListItemAvatar>
                     <Avatar src={user.avatar} />
                   </ListItemAvatar>
                   <ListItemText
-                    primary={user.name}
+                    // PRIMERA LÍNEA: Nombre del usuario y fecha/hora a la derecha
+                    primary={
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          width: "100%",
+                        }}
+                      >
+                        <Typography
+                          component="span"
+                          variant="body1"
+                          sx={{ fontWeight: "600", color: "inherit" }}
+                        >
+                          {user.name}
+                        </Typography>
+                        {lastMsg && (
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{
+                              color: "inherit",
+                              opacity: 0.8,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {lastMsg.time}
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                    // SEGUNDA LÍNEA: Preview del mensaje y canal
                     secondary={
                       lastMsg ? (
-                        // NUEVO: Usar un Box con flexWrap para permitir que el texto se envuelva
                         <Box
                           sx={{
                             display: "flex",
-                            flexWrap: "wrap",
                             alignItems: "center",
                             gap: 0.5,
+                            mt: 0.5,
                           }}
                         >
                           <Typography
-                            variant="caption"
-                            component="span" // Importante: hace que se comporte como elemento en línea
-                            sx={
-                              {
-                                // No truncar, permitir que el texto se envuelva
-                                // flexGrow: 1, // Puedes probar esto si quieres que el texto ocupe más espacio
-                              }
-                            }
-                          >
-                            {lastMsg.text.slice(0, 60)}...
-                          </Typography>
-                          {/* Agrupar la hora y el icono para que se mantengan juntos */}
-                          <Box
+                            variant="body2"
+                            component="span"
                             sx={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 0.5,
+                              color: "inherit",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              flexGrow: 1,
                             }}
                           >
-                            <Typography
-                              variant="caption"
-                              component="span"
-                              sx={{ flexShrink: 0 }}
-                            >
-                              — {lastMsg.time}
-                            </Typography>
-                            {/* Renderizar el icono del canal aquí */}
-                            {canal && getChannelIcon(canal, 14)}{" "}
-                            {/* Tamaño más pequeño para la lista */}
-                          </Box>
+                            {lastMsg.text}
+                          </Typography>
+                          {/* Renderizar el icono del canal aquí */}
+                          {canal && getChannelIcon(canal, 14)}
                         </Box>
                       ) : (
                         ""
