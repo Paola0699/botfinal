@@ -14,6 +14,13 @@ import PersonIcon from "@mui/icons-material/Person";
 import FlagIcon from "@mui/icons-material/Flag";
 import dayjs from "dayjs";
 
+// NUEVO: Importar iconos para los canales
+import InstagramIcon from "@mui/icons-material/Instagram";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import FacebookIcon from "@mui/icons-material/Facebook";
+import LanguageIcon from "@mui/icons-material/Language"; // Para "web" o "website"
+import QuestionMarkIcon from "@mui/icons-material/QuestionMark"; // Para canal desconocido
+
 const ITEMS_PER_PAGE = 10;
 
 const LeadsColumn = ({ title, leads }) => {
@@ -30,18 +37,38 @@ const LeadsColumn = ({ title, leads }) => {
 
   const totalPages = Math.ceil(leads.length / ITEMS_PER_PAGE);
 
+  // Función para obtener el icono del canal
+  const getChannelIcon = (channel) => {
+    switch (channel) {
+      case "instagram":
+        return <InstagramIcon sx={{ fontSize: 16, color: "#E4405F" }} />;
+      case "whatsapp":
+        return <WhatsAppIcon sx={{ fontSize: 16, color: "#25D366" }} />;
+      case "facebook":
+        return <FacebookIcon sx={{ fontSize: 16, color: "#1877F2" }} />;
+      case "web":
+      case "website":
+        return <LanguageIcon sx={{ fontSize: 16, color: "#333" }} />;
+      // Añade más casos si tienes otros canales (ej: "telegram", "email", etc.)
+      default:
+        return <QuestionMarkIcon sx={{ fontSize: 16, color: "#999" }} />; // Icono por defecto para canal desconocido
+    }
+  };
+
   return (
     <Paper
       elevation={0}
       sx={{
-        height: "100%", // Esta propiedad es clave para que ocupe el 100% de la altura de su padre (el Grid item)
-        // minHeight: "80vh", // ¡ELIMINA ESTA LÍNEA! Esto es lo que causaba la disparidad.
+        backgroundColor: "#f0f2f5",
+        borderRadius: 3,
+        boxShadow: "0 6px 16px rgba(0,0,0,0.06)",
+        height: "100%",
+        width: "20vw",
         display: "flex",
         flexDirection: "column",
-        width: "20vw",
+        border: "1px solid #e0e0e0",
       }}
     >
-      {/* Añadimos flexGrow: 1 a este Box para que el contenido principal crezca y empuje la paginación hacia abajo */}
       <Box sx={{ flexGrow: 1 }}>
         <Typography
           variant="h6"
@@ -82,9 +109,10 @@ const LeadsColumn = ({ title, leads }) => {
                 }}
               >
                 <Avatar
+                  src={lead.profilePic}
                   sx={{ bgcolor: "#e0e0e0", mr: 2, width: 40, height: 40 }}
                 >
-                  <PersonIcon sx={{ color: "#757575" }} />
+                  {!lead.profilePic && <PersonIcon sx={{ color: "#757575" }} />}
                 </Avatar>
                 <Box sx={{ flexGrow: 1 }}>
                   <Typography variant="subtitle1" fontWeight="bold">
@@ -104,6 +132,8 @@ const LeadsColumn = ({ title, leads }) => {
                       </Typography>
                     )}
                     <FlagIcon sx={{ fontSize: 16, color: lead.flagColor }} />
+                    {/* NUEVO: Mostrar el icono del canal si existe */}
+                    {lead.canal && getChannelIcon(lead.canal)}
                   </Box>
                   {lead?.telefono && (
                     <Link href={`tel:${lead.telefono}`} underline="none">
@@ -134,7 +164,6 @@ const LeadsColumn = ({ title, leads }) => {
         )}
       </Box>
 
-      {/* Paginación */}
       {totalPages > 1 && (
         <Box display="flex" justifyContent="center" py={2} mt="auto">
           <Pagination

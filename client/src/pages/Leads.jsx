@@ -14,9 +14,9 @@ import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import SortIcon from "@mui/icons-material/Sort";
-import PersonIcon from "@mui/icons-material/Person"; // For avatar placeholder
+import PersonIcon from "@mui/icons-material/Person";
 import { useEffect, useRef, useState } from "react";
-import LeadsColumn from "../leads/LeadsColumn"; // Ensure correct path if moved
+import LeadsColumn from "../leads/LeadsColumn";
 
 const API_KEY =
   "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
@@ -27,7 +27,7 @@ const Leads = () => {
   const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
-  const [anchorEl, setAnchorEl] = useState(null); // For "Leads Frios" dropdown
+  const [anchorEl, setAnchorEl] = useState(null);
 
   const handleMenuClick = (event) => {
     setAnchorEl(event.currentTarget);
@@ -74,12 +74,14 @@ const Leads = () => {
   usersList.forEach((record) => {
     const fields = record.fields;
     const temperatura = fields.temperatura || "";
-    const nombre = fields.nombre || fields.username || "Sin nombre";
+    const nombre =
+      fields.nombre || fields.username || record.id || "Sin nombre";
     const telefono = fields.telefono || "";
     const ultimoMensaje = fields["created date"] || record.createdTime || "";
-    // Assuming a 'tag' field for the secondary text like "Benjamin HHayées"
-    // If this field doesn't exist in your Airtable, it will be an empty string.
     const tag = fields.tag || "";
+    const profilePic = fields["profile pic"] || null;
+    // NUEVO: Extraer el campo 'canal'
+    const canal = fields.canal ? fields.canal.toLowerCase() : ""; // Convertir a minúsculas para facilitar la comparación
 
     let flagColor = "#FFC107"; // Default to yellow as seen in mockup for Alexander Patel
 
@@ -91,7 +93,16 @@ const Leads = () => {
       flagColor = "#F44336"; // Red
     }
 
-    const leadData = { nombre, telefono, ultimoMensaje, tag, flagColor };
+    // NUEVO: Pasar 'canal' al objeto leadData
+    const leadData = {
+      nombre,
+      telefono,
+      ultimoMensaje,
+      tag,
+      flagColor,
+      profilePic,
+      canal,
+    };
 
     if (temperatura.includes("Frío")) {
       leadsClasificados.frio.push(leadData);
@@ -100,7 +111,6 @@ const Leads = () => {
     } else if (temperatura.includes("Caliente")) {
       leadsClasificados.caliente.push(leadData);
     } else {
-      // If no temperature specified, default to frio as per original logic
       leadsClasificados.frio.push(leadData);
     }
   });
@@ -122,14 +132,13 @@ const Leads = () => {
     <Box
       sx={{
         p: 4,
-        background: "#f8f9fa", // Lighter background to match mockup
+        background: "#f8f9fa",
         minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         flexGrow: 1,
       }}
     >
-      {/* Top Header Section */}
       <Box
         sx={{
           display: "flex",
@@ -195,7 +204,7 @@ const Leads = () => {
                   backgroundColor: "#2196F3",
                 }}
               />
-            } // Blue dot
+            }
             onClick={handleMenuClick}
           >
             Leads Frios
@@ -247,7 +256,7 @@ const Leads = () => {
           <Button
             variant="contained"
             sx={{
-              backgroundColor: "#673AB7", // Purple color from mockup
+              backgroundColor: "#673AB7",
               color: "#fff",
               textTransform: "none",
               borderRadius: 2,
@@ -262,27 +271,17 @@ const Leads = () => {
         </Box>
       </Box>
 
-      {/* Lead Columns */}
       <Grid container spacing={3} sx={{ flexGrow: 1 }}>
         <Grid item xs={12} md={4}>
-          <LeadsColumn
-            title="Leads Frios" // Updated title
-            leads={leadsClasificados.frio}
-            // Removed color prop for column title as per mockup, flag color is handled in LeadsColumn
-          />
+          <LeadsColumn title="Leads Frios" leads={leadsClasificados.frio} />
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <LeadsColumn title="Leads Tibios" leads={leadsClasificados.tibio} />
         </Grid>
         <Grid item xs={12} md={4}>
           <LeadsColumn
-            title="Leads Tibios" // Updated title
-            leads={leadsClasificados.tibio}
-            // Removed color prop
-          />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <LeadsColumn
-            title="Leads Calientes" // Updated title
+            title="Leads Calientes"
             leads={leadsClasificados.caliente}
-            // Removed color prop
           />
         </Grid>
       </Grid>
