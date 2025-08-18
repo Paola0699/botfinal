@@ -13,7 +13,6 @@ const Cadenas = () => {
           width: { sm: `calc(100% - ${drawerWidth}px)` },
         }}
       >
-        <Toolbar />
         <ChatWindow />
       </Box>
     </Box>

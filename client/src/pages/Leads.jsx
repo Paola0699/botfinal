@@ -1,6 +1,22 @@
-import { Box, CircularProgress, Grid, Toolbar } from "@mui/material";
+import {
+  Box,
+  CircularProgress,
+  Grid,
+  Typography,
+  TextField,
+  InputAdornment,
+  Button,
+  IconButton,
+  Menu,
+  MenuItem,
+} from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
+import FilterListIcon from "@mui/icons-material/FilterList";
+import SortIcon from "@mui/icons-material/Sort";
+import PersonIcon from "@mui/icons-material/Person"; // For avatar placeholder
 import { useEffect, useRef, useState } from "react";
-import LeadsColumn from "../leads/LeadsColumn";
+import LeadsColumn from "../leads/LeadsColumn"; // Ensure correct path if moved
 
 const API_KEY =
   "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
@@ -11,6 +27,15 @@ const Leads = () => {
   const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(false);
   const hasFetched = useRef(false);
+  const [anchorEl, setAnchorEl] = useState(null); // For "Leads Frios" dropdown
+
+  const handleMenuClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
 
   useEffect(() => {
     if (hasFetched.current) return;
@@ -43,12 +68,8 @@ const Leads = () => {
     fetchAirtableRecords();
   }, []);
 
-  // Clasificar los leads según temperatura
-  const leadsClasificados = {
-    frio: [],
-    tibio: [],
-    caliente: [],
-  };
+  // Clasificar leads
+  const leadsClasificados = { frio: [], tibio: [], caliente: [] };
 
   usersList.forEach((record) => {
     const fields = record.fields;
@@ -56,8 +77,21 @@ const Leads = () => {
     const nombre = fields.nombre || fields.username || "Sin nombre";
     const telefono = fields.telefono || "";
     const ultimoMensaje = fields["created date"] || record.createdTime || "";
+    // Assuming a 'tag' field for the secondary text like "Benjamin HHayées"
+    // If this field doesn't exist in your Airtable, it will be an empty string.
+    const tag = fields.tag || "";
 
-    const leadData = { nombre, telefono, ultimoMensaje };
+    let flagColor = "#FFC107"; // Default to yellow as seen in mockup for Alexander Patel
+
+    if (temperatura.includes("Frío")) {
+      flagColor = "#FF69B4"; // Pink
+    } else if (temperatura.includes("Tibio")) {
+      flagColor = "#4CAF50"; // Green
+    } else if (temperatura.includes("Caliente")) {
+      flagColor = "#F44336"; // Red
+    }
+
+    const leadData = { nombre, telefono, ultimoMensaje, tag, flagColor };
 
     if (temperatura.includes("Frío")) {
       leadsClasificados.frio.push(leadData);
@@ -66,7 +100,7 @@ const Leads = () => {
     } else if (temperatura.includes("Caliente")) {
       leadsClasificados.caliente.push(leadData);
     } else {
-      // Si no tiene temperatura o es otra cosa, lo ponemos en frío por defecto
+      // If no temperature specified, default to frio as per original logic
       leadsClasificados.frio.push(leadData);
     }
   });
@@ -85,28 +119,170 @@ const Leads = () => {
   }
 
   return (
-    <Box sx={{ p: 3, backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
-      <Toolbar />
-      <Grid container spacing={3}>
+    <Box
+      sx={{
+        p: 4,
+        background: "#f8f9fa", // Lighter background to match mockup
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        flexGrow: 1,
+      }}
+    >
+      {/* Top Header Section */}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 4,
+          flexWrap: "wrap",
+          gap: 2,
+        }}
+      >
+        <Typography
+          variant="h4"
+          sx={{
+            fontWeight: "bold",
+            color: "#333",
+          }}
+        >
+          {usersList.length} Leads
+        </Typography>
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <TextField
+            variant="outlined"
+            size="small"
+            placeholder="Buscar leads..."
+            sx={{
+              backgroundColor: "#fff",
+              borderRadius: 2,
+              "& .MuiOutlinedInput-root": {
+                "& fieldset": { borderColor: "transparent" },
+                "&:hover fieldset": { borderColor: "transparent" },
+                "&.Mui-focused fieldset": { borderColor: "transparent" },
+              },
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: "#999" }} />
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          <Button
+            variant="outlined"
+            sx={{
+              backgroundColor: "#fff",
+              color: "#555",
+              borderColor: "#e0e0e0",
+              textTransform: "none",
+              borderRadius: 2,
+              "&:hover": {
+                backgroundColor: "#f5f5f5",
+                borderColor: "#d0d0d0",
+              },
+            }}
+            startIcon={
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  backgroundColor: "#2196F3",
+                }}
+              />
+            } // Blue dot
+            onClick={handleMenuClick}
+          >
+            Leads Frios
+          </Button>
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+          >
+            <MenuItem onClick={handleMenuClose}>Leads Frios</MenuItem>
+            <MenuItem onClick={handleMenuClose}>Leads Tibios</MenuItem>
+            <MenuItem onClick={handleMenuClose}>Leads Calientes</MenuItem>
+            <MenuItem onClick={handleMenuClose}>Todos los Leads</MenuItem>
+          </Menu>
+
+          <Button
+            variant="outlined"
+            sx={{
+              backgroundColor: "#fff",
+              color: "#555",
+              borderColor: "#e0e0e0",
+              textTransform: "none",
+              borderRadius: 2,
+              "&:hover": {
+                backgroundColor: "#f5f5f5",
+                borderColor: "#d0d0d0",
+              },
+            }}
+            startIcon={<FilterListIcon />}
+          >
+            Status
+          </Button>
+
+          <IconButton
+            sx={{
+              backgroundColor: "#fff",
+              color: "#555",
+              border: "1px solid #e0e0e0",
+              borderRadius: 2,
+              "&:hover": {
+                backgroundColor: "#f5f5f5",
+                borderColor: "#d0d0d0",
+              },
+            }}
+          >
+            <SortIcon />
+          </IconButton>
+
+          <Button
+            variant="contained"
+            sx={{
+              backgroundColor: "#673AB7", // Purple color from mockup
+              color: "#fff",
+              textTransform: "none",
+              borderRadius: 2,
+              "&:hover": {
+                backgroundColor: "#5e35b1",
+              },
+            }}
+            startIcon={<AddIcon />}
+          >
+            Crear Lead
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Lead Columns */}
+      <Grid container spacing={3} sx={{ flexGrow: 1 }}>
         <Grid item xs={12} md={4}>
           <LeadsColumn
-            title="Lead frío"
+            title="Leads Frios" // Updated title
             leads={leadsClasificados.frio}
-            color="#607D8B"
+            // Removed color prop for column title as per mockup, flag color is handled in LeadsColumn
           />
         </Grid>
         <Grid item xs={12} md={4}>
           <LeadsColumn
-            title="Lead tibio"
+            title="Leads Tibios" // Updated title
             leads={leadsClasificados.tibio}
-            color="#FF9800"
+            // Removed color prop
           />
         </Grid>
         <Grid item xs={12} md={4}>
           <LeadsColumn
-            title="Lead caliente"
+            title="Leads Calientes" // Updated title
             leads={leadsClasificados.caliente}
-            color="#F44336"
+            // Removed color prop
           />
         </Grid>
       </Grid>

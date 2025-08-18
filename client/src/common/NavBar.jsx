@@ -8,12 +8,12 @@ import {
   ListItemIcon,
   Toolbar,
   Divider,
-  Button,
+  // Button, // No se usa directamente en este snippet
 } from "@mui/material";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import TopBar from "./TopBar";
-import LogoBlanco from "./logo_blanco.png";
+// import TopBar from "./TopBar"; // No se usa directamente en este snippet
+// import LogoBlanco from "./logo_blanco.png"; // No se usa directamente en este snippet
 // Importar iconos de MUI
 import LinkIcon from "@mui/icons-material/Link";
 import PeopleIcon from "@mui/icons-material/People";
@@ -21,6 +21,8 @@ import HubIcon from "@mui/icons-material/Hub";
 import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
 import ArticleIcon from "@mui/icons-material/Article";
 import LogoutIcon from "@mui/icons-material/Logout";
+import { signOut } from "firebase/auth";
+import { auth } from "../firebase";
 
 const drawerWidth = 290;
 
@@ -28,6 +30,15 @@ const NavBar = (props) => {
   const { window } = props;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+    }
+  };
 
   const sections = [
     { title: "Cadenas", id: "cadenas", path: "/cadenas", icon: <LinkIcon /> },
@@ -68,15 +79,24 @@ const NavBar = (props) => {
     window !== undefined ? () => window().document.body : undefined;
 
   const drawer = (
-    <div>
-      <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
+    // Aplicamos flexbox al contenedor principal del drawer
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%", // Aseguramos que ocupe toda la altura del Drawer
+      }}
+    >
+      <Toolbar />
+      {/* <Box sx={{ display: "flex", justifyContent: "center", mb: 3 }}>
         <img
           src={LogoBlanco}
           alt="Logo"
           style={{ width: "120px", objectFit: "contain" }}
         />
-      </Box>
-      <List>
+      </Box> */}
+      {/* Aplicamos flexGrow para que la lista de secciones ocupe el espacio restante */}
+      <List sx={{ flexGrow: 1 }}>
         {sections.map((section) => (
           <Link
             key={section.id}
@@ -94,12 +114,26 @@ const NavBar = (props) => {
           </Link>
         ))}
       </List>
-    </div>
+      <Divider sx={{ bgcolor: "rgba(255,255,255,0.2)", mb: 2 }} />
+
+      {/* El botón de Cerrar Sesión se mantendrá al final */}
+      <Box>
+        <ListItem disablePadding>
+          <ListItemButton onClick={handleLogout}>
+            <ListItemIcon sx={{ color: "white" }}>
+              <LogoutIcon />
+            </ListItemIcon>
+            <ListItemText primary="Cerrar Sesión" />
+          </ListItemButton>
+        </ListItem>
+      </Box>
+    </Box>
   );
 
   return (
     <>
-      <TopBar />
+      {/*       <TopBar />
+       */}{" "}
       <Box
         component="nav"
         sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
@@ -116,7 +150,7 @@ const NavBar = (props) => {
             "& .MuiDrawer-paper": {
               boxSizing: "border-box",
               width: drawerWidth,
-              backgroundColor: "#3c3c3a",
+              background: "linear-gradient(90deg, #6a0dad, #a64aff)",
               color: "white",
             },
           }}
@@ -135,8 +169,9 @@ const NavBar = (props) => {
             "& .MuiDrawer-paper": {
               boxSizing: "border-box",
               width: drawerWidth,
-              backgroundColor: "#3c3c3a",
+              background: "linear-gradient(135deg, #6A11CB, #2575FC)",
               color: "white",
+              border: "0px solid red",
             },
           }}
           open
