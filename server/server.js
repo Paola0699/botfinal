@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 4000;
 app.use(cors()); // Permite solicitudes desde tu frontend (en desarrollo)
 app.use(express.json()); // Parsear JSON en body de las peticiones
 
-const FB_BEARER_TOKEN = process.env.FB_BEARER_TOKEN || "EAALVZCVOXajwBPD0l7lQweezStIsZBLiznoEkO7mmYZCrzzMwOAkODaFClc7XXXGGBb4l0jcK3Jf8GlhZApiCRT15R30cC9ZApH0EIEfeYZC1vAIVZCCC2ZAqwWKq1KcXnwLvy4F7d1x5AQLGrZAQ0brZCvbiZCslTdiKXD5IZClsXYxRAufMubXMBO1EOrP6sGdlgZDZD"; 
+const FB_BEARER_TOKEN = process.env.VITE_FB_BEARER_TOKEN || ""; 
 app.get("/api/get-templates", async (req, res) => {
   try {
     const fbRes = await fetch(

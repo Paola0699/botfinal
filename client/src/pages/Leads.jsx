@@ -14,14 +14,12 @@ import SearchIcon from "@mui/icons-material/Search";
 import AddIcon from "@mui/icons-material/Add";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import SortIcon from "@mui/icons-material/Sort";
-import PersonIcon from "@mui/icons-material/Person";
 import { useEffect, useRef, useState } from "react";
 import LeadsColumn from "../leads/LeadsColumn";
 
-const API_KEY =
-  "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
-const BASE_ID = "appbT7f58H1PLdY11";
-const TABLE_NAME = "chat-crm";
+const API_KEY = import.meta.env.VITE_API_KEY;
+const BASE_ID = import.meta.env.VITE_BASE_ID;
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
 const Leads = () => {
   const [usersList, setUsersList] = useState([]);

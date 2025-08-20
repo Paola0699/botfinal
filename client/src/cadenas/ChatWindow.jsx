@@ -1,7 +1,6 @@
 import {
   Avatar,
   Box,
-  Button,
   CircularProgress,
   Divider,
   FormControl,
@@ -30,11 +29,11 @@ import FacebookIcon from "@mui/icons-material/Facebook";
 import LanguageIcon from "@mui/icons-material/Language"; // Para "web" o "website"
 import QuestionMarkIcon from "@mui/icons-material/QuestionMark"; // Para canal desconocido
 
-const API_KEY =
-  "patEpPGZwM0wqagdm.20e5bf631e702ded9b04d6c2fed3e41002a8afc9127a57cff9bf8c3b3416dd02";
-const BASE_ID = "appbT7f58H1PLdY11";
-const TABLE_NAME = "chat-crm";
+const API_KEY = import.meta.env.VITE_API_KEY;
+const BASE_ID = import.meta.env.VITE_BASE_ID;
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
+console.log(API_KEY);
 const ChatWindow = () => {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -64,14 +63,14 @@ const ChatWindow = () => {
         const data = await response.json();
         const profiles = {};
         data.records.forEach((record) => {
-          const senderId = record.fields["sender_id"];
+          const senderId = record.fields["session_id"];
           if (senderId) {
             profiles[senderId] = {
               name: record.fields["nombre"] || senderId,
               email: record.fields["username"] || "Sin correo",
-              phone: record.fields["intencion de comprar"] || "Sin teléfono",
+              phone: record.fields["telefono"] || "Sin teléfono",
               avatar:
-                record.fields["profile pic"] ||
+                record.fields["profile_pic"] ||
                 `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
             };
           }

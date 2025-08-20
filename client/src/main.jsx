@@ -14,6 +14,7 @@ import Login from "./pages/Login.jsx";
 
 import PrivateRoute from "./routes/PrivateRoute.jsx";
 import PublicRoute from "./routes/PublicRoute.jsx";
+import NuevaPlantilla from "./pages/NuevaPlantilla.jsx";
 
 const Home = () => <h1>Home Page</h1>;
 
@@ -37,6 +38,7 @@ if (rootElement) {
               <Route path="cadenas_masivas" element={<CadenasMasivas />} />
               <Route path="training" element={<Training />} />
               <Route path="plantillas" element={<Plantillas />} />
+              <Route path="plantilla-nueva" element={<NuevaPlantilla />} />
             </Route>
           </Route>
 
