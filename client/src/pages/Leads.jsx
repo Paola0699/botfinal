@@ -271,14 +271,20 @@ const Leads = () => {
 
       <Grid container spacing={3} sx={{ flexGrow: 1 }}>
         <Grid item xs={12} md={4}>
-          <LeadsColumn title="Leads Frios" leads={leadsClasificados.frio} />
-        </Grid>
-        <Grid item xs={12} md={4}>
-          <LeadsColumn title="Leads Tibios" leads={leadsClasificados.tibio} />
+          <LeadsColumn
+            title={`Leads Frios (${leadsClasificados.frio.length})`}
+            leads={leadsClasificados.frio}
+          />
         </Grid>
         <Grid item xs={12} md={4}>
           <LeadsColumn
-            title="Leads Calientes"
+            title={`Leads Tibios (${leadsClasificados.tibio.length})`}
+            leads={leadsClasificados.tibio}
+          />
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <LeadsColumn
+            title={`Leads Calientes (${leadsClasificados.caliente.length})`}
             leads={leadsClasificados.caliente}
           />
         </Grid>
