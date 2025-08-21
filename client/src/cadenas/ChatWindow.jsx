@@ -29,11 +29,41 @@ import FacebookIcon from "@mui/icons-material/Facebook";
 import LanguageIcon from "@mui/icons-material/Language"; // Para "web" o "website"
 import QuestionMarkIcon from "@mui/icons-material/QuestionMark"; // Para canal desconocido
 
+// Importar iconos para la temperatura
+import AcUnitIcon from "@mui/icons-material/AcUnit"; // Frío (copo de nieve)
+import WbSunnyIcon from "@mui/icons-material/WbSunny"; // Tibio (sol pequeño)
+import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment"; // Caliente (fuego)
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline"; // Desconocido
+
 const API_KEY = import.meta.env.VITE_API_KEY;
 const BASE_ID = import.meta.env.VITE_BASE_ID;
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
 console.log(API_KEY);
+
+// --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
+const TEMPERATURE_DISPLAY_MAP = {
+  frio: "Frío",
+  tibio: "Tibio",
+  caliente: "Caliente",
+  desconocido: "Desconocido",
+};
+
+const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
+
+// Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
+const normalizeTemperatureInternal = (temp) => {
+  if (!temp) return "desconocido"; // Si temp es undefined, null o vacío, es desconocido
+  const lowerTemp = String(temp)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (TEMPERATURE_INTERNAL_VALUES.includes(lowerTemp)) {
+    return lowerTemp;
+  }
+  return "desconocido"; // Si no coincide con ningún valor conocido, es desconocido
+};
+
 const ChatWindow = () => {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -44,7 +74,22 @@ const ChatWindow = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
   const [channelFilter, setChannelFilter] = useState("todos");
+  const [temperatureFilter, setTemperatureFilter] = useState([
+    "tibio",
+    "caliente",
+  ]);
   const [loading, setLoading] = useState(true);
+
+  // Debugging log for selectedUser changes
+  useEffect(() => {
+    console.log("Selected User changed:", selectedUser?.id);
+    if (selectedUser) {
+      console.log(
+        "Conversations for selected user:",
+        conversations[selectedUser.id]
+      );
+    }
+  }, [selectedUser, conversations]); // Added conversations to dependencies for more context
 
   useEffect(() => {
     const fetchAirtableRecords = async () => {
@@ -72,6 +117,9 @@ const ChatWindow = () => {
               avatar:
                 record.fields["profile_pic"] ||
                 `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
+              temperatura: normalizeTemperatureInternal(
+                record.fields["temperatura"]
+              ),
             };
           }
         });
@@ -96,31 +144,49 @@ const ChatWindow = () => {
   useEffect(() => {
     const getChatLog = async () => {
       const { data, error } = await supabase.from("chatlog").select("*");
-      if (error) return;
+      if (error) {
+        console.error("Error fetching chat log:", error);
+        setLoading(false);
+        return;
+      }
 
       const groupedBySession = data.reduce((acc, msg) => {
         const sessionId = msg.session_id;
         if (!acc[sessionId]) {
           acc[sessionId] = [];
-          // Asegurarse de que el canal se almacene en la propiedad del objeto de la sesión
           acc[sessionId].canal = msg.canal;
         }
         const createdAt = new Date(msg.created_at);
         acc[sessionId].push({
           fromMe: msg.role === "assistant",
           text: msg.content,
-          // MODIFICACIÓN: Cambiar el formato de la fecha y hora a dd/mm/yy hh:mm
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
-            month: "2-digit", // Cambiado de "short" a "2-digit"
-            year: "2-digit", // Cambiado de "numeric" a "2-digit"
+            month: "2-digit",
+            year: "2-digit",
             hour: "2-digit",
             minute: "2-digit",
           }),
-          createdAt,
+          createdAt, // Mantener el objeto Date para comparaciones de tiempo
         });
         return acc;
       }, {});
+
+      // Debugging: Log the messages and their createdAt dates
+      Object.keys(groupedBySession).forEach((sessionId) => {
+        console.log(`Messages for session ${sessionId}:`);
+        groupedBySession[sessionId].forEach((msg) => {
+          console.log(
+            `  - Role: ${msg.fromMe ? "assistant" : "user"}, Content: "${
+              msg.text
+            }", CreatedAt: ${
+              msg.createdAt
+            } (Type: ${typeof msg.createdAt}, Valid: ${
+              msg.createdAt instanceof Date && !isNaN(msg.createdAt.getTime())
+            })`
+          );
+        });
+      });
 
       Object.keys(groupedBySession).forEach((sessionId) => {
         groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
@@ -140,6 +206,7 @@ const ChatWindow = () => {
               `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
             email: profile?.email || "Sin correo",
             phone: profile?.phone || "Sin teléfono",
+            temperatura: normalizeTemperatureInternal(profile?.temperatura),
             lastCreatedAt,
           };
         })
@@ -156,13 +223,24 @@ const ChatWindow = () => {
         };
       });
       setConversations(cleanedConversations);
-      if (uniqueUsers.length > 0) setSelectedUser(uniqueUsers[0]);
+
+      if (uniqueUsers.length > 0) {
+        if (
+          !selectedUser ||
+          !uniqueUsers.some((u) => u.id === selectedUser.id)
+        ) {
+          setSelectedUser(uniqueUsers[0]);
+        }
+      } else {
+        setSelectedUser(null);
+      }
       setLoading(false);
     };
-    if (Object.keys(userProfiles).length > 0) {
+
+    if (Object.keys(userProfiles).length > 0 || !loading) {
       getChatLog();
     }
-  }, [userProfiles]);
+  }, [userProfiles, selectedUser, loading]);
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
@@ -170,18 +248,31 @@ const ChatWindow = () => {
 
   const handleSend = async () => {
     if (!newMessage.trim() || !selectedUser) return;
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const ampm = hours >= 12 ? "PM" : "AM";
-    const formattedTime = `${((hours + 11) % 12) + 1}:${minutes
-      .toString()
-      .padStart(2, "0")} ${ampm}`;
 
-    const updatedMessages = [
-      ...currentMessages,
-      { fromMe: true, text: newMessage, time: formattedTime },
-    ];
+    // Asegurarse de que el envío esté permitido antes de proceder
+    if (!canSendMessagesNow) {
+      console.warn(
+        "No se puede enviar el mensaje: el chat está inactivo o no hay usuario seleccionado."
+      );
+      return;
+    }
+
+    const now = new Date();
+    const formattedTime = now.toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const messageToSend = {
+      fromMe: true,
+      text: newMessage,
+      time: formattedTime,
+      createdAt: now,
+    };
+
     setSendingMessage(true);
     try {
       const res = await fetch("/api/send-message", {
@@ -194,26 +285,59 @@ const ChatWindow = () => {
       });
 
       if (res.ok) {
-        setConversations({
-          ...conversations,
-          [selectedUser.id]: {
-            ...conversations[selectedUser.id],
-            messages: updatedMessages,
+        // Guardar el mensaje en Supabase después de un envío exitoso a la API
+        const { data, error } = await supabase.from("chatlog").insert([
+          {
+            session_id: selectedUser.id,
+            role: "assistant", // Rol del agente
+            content: newMessage,
+            created_at: now.toISOString(), // Formato ISO para Supabase
+            canal: conversations[selectedUser.id]?.canal || "desconocido", // Guardar el canal
           },
+        ]);
+
+        if (error) {
+          console.error("Error al guardar el mensaje en Supabase:", error);
+          // Opcional: Mostrar un error al usuario si falla la inserción en Supabase
+        } else {
+          console.log("Mensaje guardado en Supabase:", data);
+        }
+
+        // Actualizar el estado local de las conversaciones para reflejar el nuevo mensaje
+        setConversations((prevConversations) => ({
+          ...prevConversations,
+          [selectedUser.id]: {
+            ...prevConversations[selectedUser.id],
+            messages: [
+              ...(prevConversations[selectedUser.id]?.messages || []),
+              messageToSend,
+            ],
+          },
+        }));
+
+        // Actualizar la última actividad del usuario seleccionado para reordenar la lista
+        setUsers((prevUsers) => {
+          const updatedUser = {
+            ...selectedUser,
+            lastCreatedAt: now,
+          };
+          const otherUsers = prevUsers.filter((u) => u.id !== selectedUser.id);
+          // Reordenar la lista para que el usuario con el mensaje más reciente esté arriba
+          return [updatedUser, ...otherUsers].sort(
+            (a, b) => b.lastCreatedAt - a.lastCreatedAt
+          );
         });
-        const updatedUser = {
-          ...selectedUser,
-          lastCreatedAt: new Date(),
-        };
-        const updatedUsers = [
-          updatedUser,
-          ...users.filter((u) => u.id !== selectedUser.id),
-        ];
-        setUsers(updatedUsers);
+
         setNewMessage("");
+      } else {
+        console.error(
+          "Error al enviar mensaje a la API:",
+          res.status,
+          await res.text()
+        );
       }
     } catch (err) {
-      console.error("Error:", err);
+      console.error("Error en la solicitud de envío:", err);
     } finally {
       setSendingMessage(false);
     }
@@ -232,10 +356,15 @@ const ChatWindow = () => {
       .includes(searchTerm.toLowerCase());
     const canal = conversations[user.id]?.canal || "desconocido";
     const matchesChannel = channelFilter === "todos" || canal === channelFilter;
-    return matchesName && matchesChannel;
+
+    const userTemperatureInternal = user.temperatura;
+    const matchesTemperature =
+      temperatureFilter.length === 0 ||
+      temperatureFilter.includes(userTemperatureInternal);
+
+    return matchesName && matchesChannel && matchesTemperature;
   });
 
-  // Función para obtener el icono del canal
   const getChannelIcon = (channel, size = 16) => {
     switch (channel?.toLowerCase()) {
       case "instagram":
@@ -251,6 +380,92 @@ const ChatWindow = () => {
         return <QuestionMarkIcon sx={{ fontSize: size, color: "#999" }} />;
     }
   };
+
+  const getTemperatureIcon = (temperatureInternal, size = 16) => {
+    switch (temperatureInternal) {
+      case "frio":
+        return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF" }} />;
+      case "tibio":
+        return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700" }} />;
+      case "caliente":
+        return (
+          <LocalFireDepartmentIcon sx={{ fontSize: size, color: "#FF4500" }} />
+        );
+      default:
+        return <HelpOutlineIcon sx={{ fontSize: size, color: "#999" }} />;
+    }
+  };
+
+  // REVISED LOGIC: Determines if messages can be sent
+  const calculateCanSendMessagesNow = () => {
+    if (!selectedUser || !conversations[selectedUser.id]) {
+      console.log(
+        "calculateCanSendMessagesNow: No selected user or conversation data. Returning true (default)."
+      );
+      return true; // If no user selected or no conversation data, allow sending.
+    }
+
+    const messages = conversations[selectedUser.id].messages;
+    // Find the last message that was NOT sent by the assistant (i.e., from the user).
+    const lastUserMsg = messages
+      .slice()
+      .reverse()
+      .find((msg) => !msg.fromMe);
+
+    // If there's no message from the user, it means it's a new conversation
+    // or only the assistant has sent messages. In this case, allow sending.
+    if (!lastUserMsg) {
+      console.log(
+        "calculateCanSendMessagesNow: No messages from user found. Returning true."
+      );
+      return true;
+    }
+
+    // Ensure lastUserMsg.createdAt is a valid Date object
+    if (
+      !(lastUserMsg.createdAt instanceof Date) ||
+      isNaN(lastUserMsg.createdAt.getTime())
+    ) {
+      console.warn(
+        "calculateCanSendMessagesNow: Invalid createdAt date found for last user message:",
+        lastUserMsg.createdAt,
+        ". Returning true to avoid blocking."
+      );
+      return true; // If date is invalid, assume it's an error and allow sending to not block agent.
+    }
+
+    const timeDifference = Date.now() - lastUserMsg.createdAt.getTime();
+    const twentyFourHoursInMs = 24 * 60 * 60 * 1000;
+
+    console.log(
+      `calculateCanSendMessagesNow: Last user message time: ${lastUserMsg.createdAt.toISOString()}`
+    );
+    console.log(
+      `calculateCanSendMessagesNow: Current time: ${new Date().toISOString()}`
+    );
+    console.log(
+      `calculateCanSendMessagesNow: Time difference (ms): ${timeDifference}`
+    );
+    console.log(
+      `calculateCanSendMessagesNow: 24 hours (ms): ${twentyFourHoursInMs}`
+    );
+    console.log(
+      `calculateCanSendMessagesNow: Is timeDifference < 24h? ${
+        timeDifference < twentyFourHoursInMs
+      }`
+    );
+
+    return timeDifference < twentyFourHoursInMs;
+  };
+
+  const canSendMessagesNow = calculateCanSendMessagesNow();
+  const isInputDisabled =
+    !selectedUser || sendingMessage || !canSendMessagesNow;
+
+  // Debugging: Log the final state of flags
+  console.log(
+    `Render: selectedUser: ${selectedUser?.id}, canSendMessagesNow: ${canSendMessagesNow}, isInputDisabled: ${isInputDisabled}`
+  );
 
   if (loading) {
     return (
@@ -297,6 +512,45 @@ const ChatWindow = () => {
               </Select>
             </FormControl>
           </Box>
+          <Box px={2} pt={1} pb={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="temperature-select-label">Temperatura</InputLabel>
+              <Select
+                labelId="temperature-select-label"
+                multiple
+                value={temperatureFilter}
+                onChange={(event) => {
+                  const {
+                    target: { value },
+                  } = event;
+                  if (value.includes("todos")) {
+                    setTemperatureFilter([]);
+                  } else {
+                    setTemperatureFilter(value);
+                  }
+                }}
+                label="Temperatura"
+                renderValue={(selected) => {
+                  if (selected.length === 0) {
+                    return "Todos";
+                  }
+                  return selected
+                    .map((val) => TEMPERATURE_DISPLAY_MAP[val])
+                    .join(", ");
+                }}
+              >
+                <MenuItem value="todos">Todos</MenuItem>
+                {TEMPERATURE_INTERNAL_VALUES.filter(
+                  (val) => val !== "desconocido"
+                ).map((tempInternal) => (
+                  <MenuItem key={tempInternal} value={tempInternal}>
+                    {TEMPERATURE_DISPLAY_MAP[tempInternal]}
+                  </MenuItem>
+                ))}
+                <MenuItem value="desconocido">Desconocido</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
           <Box px={2} pb={1}>
             <TextField
               fullWidth
@@ -314,7 +568,7 @@ const ChatWindow = () => {
               const userConvo = conversations[user.id];
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
-              const canal = userConvo?.canal; // Obtener el canal del usuario
+              const canal = userConvo?.canal;
 
               return (
                 <ListItem
@@ -329,14 +583,13 @@ const ChatWindow = () => {
                       mx: 1,
                       color: "white",
                     },
-                    minHeight: 72, // Asegura espacio para dos líneas
+                    minHeight: 72,
                   }}
                 >
                   <ListItemAvatar>
                     <Avatar src={user.avatar} />
                   </ListItemAvatar>
                   <ListItemText
-                    // PRIMERA LÍNEA: Nombre del usuario y fecha/hora a la derecha
                     primary={
                       <Box
                         sx={{
@@ -368,7 +621,6 @@ const ChatWindow = () => {
                         )}
                       </Box>
                     }
-                    // SEGUNDA LÍNEA: Preview del mensaje y canal
                     secondary={
                       lastMsg ? (
                         <Box
@@ -392,8 +644,9 @@ const ChatWindow = () => {
                           >
                             {lastMsg.text}
                           </Typography>
-                          {/* Renderizar el icono del canal aquí */}
                           {canal && getChannelIcon(canal, 14)}
+                          {user.temperatura &&
+                            getTemperatureIcon(user.temperatura, 14)}
                         </Box>
                       ) : (
                         ""
@@ -429,7 +682,6 @@ const ChatWindow = () => {
             <Typography variant="h6" sx={{ flexGrow: 1 }}>
               {selectedUser?.name}
             </Typography>
-            {/* Mostrar el icono del canal aquí (con tamaño por defecto de 20px) */}
             {selectedUser &&
               getChannelIcon(conversations[selectedUser.id]?.canal)}
             <IconButton onClick={handlePauseChat}>
@@ -473,25 +725,45 @@ const ChatWindow = () => {
             <div ref={messagesEndRef} />
           </Box>
           <Divider />
-          <Box sx={{ display: "flex", p: 2, bgcolor: "#fff" }}>
-            <TextField
-              fullWidth
-              variant="outlined"
-              placeholder="Escribe un mensaje"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              sx={{ borderRadius: 2 }}
-            />
-            <IconButton
-              onClick={handleSend}
-              size="small"
-              disabled={sendingMessage}
-              style={{ marginLeft: "1rem" }}
-            >
-              {" "}
-              <SendIcon />
-            </IconButton>
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              p: 2,
+              bgcolor: "#fff",
+            }}
+          >
+            {/* Leyenda de deshabilitado */}
+            {!canSendMessagesNow && selectedUser && (
+              <Typography
+                variant="caption"
+                color="error"
+                sx={{ mb: 1, textAlign: "center" }}
+              >
+                No se pueden enviar mensajes. El último mensaje del usuario
+                tiene más de 24 horas. Solo se puede compartir una plantilla.
+              </Typography>
+            )}
+            <Box sx={{ display: "flex", width: "100%" }}>
+              <TextField
+                fullWidth
+                variant="outlined"
+                placeholder="Escribe un mensaje"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                disabled={isInputDisabled}
+                sx={{ borderRadius: 2 }}
+              />
+              <IconButton
+                onClick={handleSend}
+                size="small"
+                disabled={isInputDisabled}
+                style={{ marginLeft: "1rem" }}
+              >
+                <SendIcon />
+              </IconButton>
+            </Box>
           </Box>
         </Paper>
       </Box>
@@ -516,6 +788,19 @@ const ChatWindow = () => {
           </Typography>
           <Typography variant="subtitle2">Teléfono</Typography>
           <Typography variant="body2">{selectedUser?.phone}</Typography>
+          <Typography
+            variant="subtitle2"
+            sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
+          >
+            Temperatura{" "}
+            {selectedUser?.temperatura &&
+              getTemperatureIcon(selectedUser.temperatura, 16)}
+          </Typography>
+          <Typography variant="body2">
+            {selectedUser?.temperatura
+              ? TEMPERATURE_DISPLAY_MAP[selectedUser.temperatura]
+              : "Desconocido"}
+          </Typography>
         </Paper>
       </Box>
     </Box>
