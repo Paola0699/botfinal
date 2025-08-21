@@ -20,32 +20,30 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 
 import { useState, useEffect } from "react";
 
+// Importar iconos para la temperatura
+import AcUnitIcon from "@mui/icons-material/AcUnit"; // Frío (copo de nieve)
+import WbSunnyIcon from "@mui/icons-material/WbSunny"; // Tibio (sol pequeño)
+import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment"; // Caliente (fuego)
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline"; // Desconocido
+
 const API_KEY = import.meta.env.VITE_API_KEY;
 const BASE_ID = import.meta.env.VITE_BASE_ID;
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
 // --- Lógica para el color dinámico del chip de Tipo de Cliente ---
 const getClientTypeColor = (clientType) => {
-  switch (clientType) {
-    case "VIP":
-      return {
-        bgcolor: "#E8F5E9", // Verde claro (similar al de idioma)
-        color: "#2E7D32", // Verde oscuro
-      };
-    case "Regular":
-      return {
-        bgcolor: "#E3F2FD", // Azul muy claro
-        color: "#1976D2", // Azul estándar
-      };
-    case "Potencial":
+  switch (
+    clientType?.toLowerCase() // Usar toLowerCase para manejar mayúsculas/minúsculas
+  ) {
+    case "prospecto":
       return {
         bgcolor: "#FFFDE7", // Amarillo muy claro
         color: "#FFC107", // Amarillo vibrante
       };
-    case "Inactivo":
+    case "paciente":
       return {
-        bgcolor: "#FBE9E7", // Rojo claro
-        color: "#D32F2F", // Rojo oscuro
+        bgcolor: "#E8F5E9", // Verde claro
+        color: "#2E7D32", // Verde oscuro
       };
     default:
       return {
@@ -55,10 +53,48 @@ const getClientTypeColor = (clientType) => {
   }
 };
 
-// --- Helper para asignar un tipo de cliente aleatorio (para demostración) ---
-const getRandomClientType = () => {
-  const types = ["VIP", "Regular", "Potencial", "Inactivo"];
-  return types[Math.floor(Math.random() * types.length)];
+// --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN DE TEMPERATURA (reutilizadas) ---
+const TEMPERATURE_DISPLAY_MAP = {
+  frio: "Frío",
+  tibio: "Tibio",
+  caliente: "Caliente",
+  desconocido: "Desconocido",
+};
+
+const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
+
+// Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
+const normalizeTemperatureInternal = (temp) => {
+  if (!temp) return "desconocido"; // Si temp es undefined, null o vacío, es desconocido
+  const lowerTemp = String(temp)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (TEMPERATURE_INTERNAL_VALUES.includes(lowerTemp)) {
+    return lowerTemp;
+  }
+  return "desconocido"; // Si no coincide con ningún valor conocido, es desconocido
+};
+
+// Función para obtener el icono de temperatura
+const getTemperatureIcon = (temperatureInternal, size = 18) => {
+  // Aumentado el tamaño a 18 para mejor visibilidad
+  switch (temperatureInternal) {
+    case "frio":
+      return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF", mr: 0.5 }} />; // Azul claro para frío
+    case "tibio":
+      return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700", mr: 0.5 }} />; // Amarillo para tibio
+    case "caliente":
+      return (
+        <LocalFireDepartmentIcon
+          sx={{ fontSize: size, color: "#FF4500", mr: 0.5 }}
+        />
+      ); // Naranja-rojo para caliente
+    default:
+      return (
+        <HelpOutlineIcon sx={{ fontSize: size, color: "#999", mr: 0.5 }} />
+      ); // Gris para desconocido
+  }
 };
 
 const ContactosView = () => {
@@ -96,14 +132,31 @@ const ContactosView = () => {
       }
 
       const data = await response.json();
-      const formattedContacts = data.records.map((record) => ({
-        id: record.id,
-        nombre: record.fields.nombre || record.fields.username || "",
-        apellido: record.fields.apellidos || "",
-        telefono: record.fields.telefono || "",
-        mail: record.fields.mail || "",
-        tipoCliente: record.fields.tipo_cliente || getRandomClientType(), // O record.fields['Nombre del Campo']
-      }));
+      const formattedContacts = data.records.map((record) => {
+        // Simulación de temperatura si no existe en Airtable para esta vista
+        // En un entorno real, `record.fields.temperatura` debería existir
+        const simulatedTemperature = [
+          "frio",
+          "tibio",
+          "caliente",
+          "desconocido",
+        ][Math.floor(Math.random() * 4)];
+
+        return {
+          id: record.id,
+          nombre: record.fields.nombre || record.fields.username || "",
+          apellido: record.fields.apellidos || "",
+          telefono: record.fields.telefono || "",
+          mail: record.fields.mail || "",
+          // Usar el valor real de Airtable, normalizado. Si no existe, usar 'desconocido'.
+          tipoCliente: record.fields.tipo_cliente || "desconocido", // Valor por defecto si no está presente
+          // Usar el valor real de Airtable para temperatura, normalizado.
+          // Si no existe, usar el simulado (o 'desconocido' si no quieres simular)
+          temperatura: normalizeTemperatureInternal(
+            record.fields.temperatura || simulatedTemperature
+          ),
+        };
+      });
       setContacts(formattedContacts);
     } catch (err) {
       console.error("Error al obtener leads:", err);
@@ -296,14 +349,23 @@ const ContactosView = () => {
                         }}
                       >
                         <TableCell component="th" scope="row">
-                          {contact.nombre}
+                          <Box sx={{ display: "flex", alignItems: "center" }}>
+                            {/* Icono de temperatura */}
+                            {getTemperatureIcon(contact.temperatura)}
+                            {contact.nombre}
+                          </Box>
                         </TableCell>
                         <TableCell>{contact.apellido}</TableCell>
                         <TableCell>{contact.telefono}</TableCell>
                         <TableCell>{contact.mail}</TableCell>
                         <TableCell>
                           <Chip
-                            label={contact.tipoCliente}
+                            label={
+                              contact.tipoCliente
+                                ? contact.tipoCliente.charAt(0).toUpperCase() +
+                                  contact.tipoCliente.slice(1).toLowerCase()
+                                : "Desconocido"
+                            }
                             sx={{
                               ...clientTypeStyles,
                               fontWeight: "bold",
