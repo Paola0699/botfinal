@@ -15,6 +15,7 @@ import Login from "./pages/Login.jsx";
 import PrivateRoute from "./routes/PrivateRoute.jsx";
 import PublicRoute from "./routes/PublicRoute.jsx";
 import NuevaPlantilla from "./pages/NuevaPlantilla.jsx";
+import ContactosView from "./pages/Contactos.jsx";
 
 const Home = () => <h1>Home Page</h1>;
 
@@ -39,6 +40,7 @@ if (rootElement) {
               <Route path="training" element={<Training />} />
               <Route path="plantillas" element={<Plantillas />} />
               <Route path="plantilla-nueva" element={<NuevaPlantilla />} />
+              <Route path="contactos" element={<ContactosView />} />
             </Route>
           </Route>
 

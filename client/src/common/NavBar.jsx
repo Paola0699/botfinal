@@ -21,6 +21,7 @@ import HubIcon from "@mui/icons-material/Hub";
 import FitnessCenterIcon from "@mui/icons-material/FitnessCenter";
 import ArticleIcon from "@mui/icons-material/Article";
 import LogoutIcon from "@mui/icons-material/Logout";
+import ContactsIcon from "@mui/icons-material/Contacts";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 
@@ -43,6 +44,12 @@ const NavBar = (props) => {
   const sections = [
     { title: "Cadenas", id: "cadenas", path: "/cadenas", icon: <LinkIcon /> },
     { title: "Leads", id: "leads", path: "/leads", icon: <PeopleIcon /> },
+    {
+      title: "Contactos",
+      id: "contactos",
+      path: "/contactos",
+      icon: <ContactsIcon />,
+    },
     {
       title: "Cadenas Masivas",
       id: "cadenas_masivas",
