@@ -144,24 +144,12 @@ const ContactosView = () => {
   if (loading) {
     return (
       <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh", // Ocupa toda la altura de la ventana
-          width: "100vw", // Ocupa todo el ancho de la ventana
-          position: "fixed", // Fijo para cubrir todo el contenido
-          top: 0,
-          left: 0,
-          backgroundColor: "rgba(255, 255, 255, 0.8)", // Fondo semi-transparente
-          zIndex: 9999, // Asegura que esté por encima de todo
-          flexDirection: "column",
-        }}
+        height="100vh"
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
       >
         <CircularProgress size={60} />
-        <Typography variant="h6" sx={{ mt: 2 }}>
-          Cargando contactos...
-        </Typography>
       </Box>
     );
   }

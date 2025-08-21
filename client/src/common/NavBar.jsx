@@ -50,7 +50,7 @@ const NavBar = (props) => {
       path: "/contactos",
       icon: <ContactsIcon />,
     },
-    {
+    /*     {
       title: "Cadenas Masivas",
       id: "cadenas_masivas",
       path: "/cadenas_masivas",
@@ -67,7 +67,7 @@ const NavBar = (props) => {
       id: "plantillas",
       path: "/plantillas",
       icon: <ArticleIcon />,
-    },
+    }, */
   ];
 
   const handleDrawerTransitionEnd = () => {

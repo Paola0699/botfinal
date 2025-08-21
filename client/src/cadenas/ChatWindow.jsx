@@ -219,7 +219,13 @@ const ChatWindow = () => {
         const canal = groupedBySession[sessionId].canal || "desconocido";
         cleanedConversations[sessionId] = {
           canal,
-          messages: messages.map(({ createdAt, ...rest }) => rest),
+          // ¡CORRECCIÓN APLICADA AQUÍ! Mapeo explícito para asegurar que createdAt se mantenga
+          messages: messages.map((msg) => ({
+            fromMe: msg.fromMe,
+            text: msg.text,
+            time: msg.time,
+            createdAt: msg.createdAt, // Asegúrate de incluir createdAt (el objeto Date)
+          })),
         };
       });
       setConversations(cleanedConversations);
@@ -273,14 +279,27 @@ const ChatWindow = () => {
       createdAt: now,
     };
 
-    setSendingMessage(true);
+    // 1. Actualización Optimista del UI
+    setConversations((prevConversations) => ({
+      ...prevConversations,
+      [selectedUser.id]: {
+        ...prevConversations[selectedUser.id],
+        messages: [
+          ...(prevConversations[selectedUser.id]?.messages || []),
+          messageToSend,
+        ],
+      },
+    }));
+    setNewMessage(""); // Limpiar el input inmediatamente
+    setSendingMessage(true); // Indicar que se está enviando
+
     try {
       const res = await fetch("/api/send-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipientId: selectedUser.id,
-          message: newMessage,
+          message: messageToSend.text, // Usar el texto del mensaje optimista
         }),
       });
 
@@ -290,7 +309,7 @@ const ChatWindow = () => {
           {
             session_id: selectedUser.id,
             role: "assistant", // Rol del agente
-            content: newMessage,
+            content: messageToSend.text, // Usar el texto del mensaje optimista
             created_at: now.toISOString(), // Formato ISO para Supabase
             canal: conversations[selectedUser.id]?.canal || "desconocido", // Guardar el canal
           },
@@ -302,18 +321,6 @@ const ChatWindow = () => {
         } else {
           console.log("Mensaje guardado en Supabase:", data);
         }
-
-        // Actualizar el estado local de las conversaciones para reflejar el nuevo mensaje
-        setConversations((prevConversations) => ({
-          ...prevConversations,
-          [selectedUser.id]: {
-            ...prevConversations[selectedUser.id],
-            messages: [
-              ...(prevConversations[selectedUser.id]?.messages || []),
-              messageToSend,
-            ],
-          },
-        }));
 
         // Actualizar la última actividad del usuario seleccionado para reordenar la lista
         setUsers((prevUsers) => {
@@ -327,17 +334,33 @@ const ChatWindow = () => {
             (a, b) => b.lastCreatedAt - a.lastCreatedAt
           );
         });
-
-        setNewMessage("");
       } else {
+        // 2. Revertir actualización optimista si la API falla
         console.error(
-          "Error al enviar mensaje a la API:",
+          "Error al enviar mensaje a la API. Revirtiendo UI.",
           res.status,
           await res.text()
         );
+        setConversations((prevConversations) => ({
+          ...prevConversations,
+          [selectedUser.id]: {
+            ...prevConversations[selectedUser.id],
+            messages: prevConversations[selectedUser.id].messages.slice(0, -1), // Eliminar el último mensaje
+          },
+        }));
+        setNewMessage(messageToSend.text); // Restaurar el mensaje en el input
       }
     } catch (err) {
-      console.error("Error en la solicitud de envío:", err);
+      // 2. Revertir actualización optimista si hay un error de red
+      console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
+      setConversations((prevConversations) => ({
+        ...prevConversations,
+        [selectedUser.id]: {
+          ...prevConversations[selectedUser.id],
+          messages: prevConversations[selectedUser.id].messages.slice(0, -1), // Eliminar el último mensaje
+        },
+      }));
+      setNewMessage(messageToSend.text); // Restaurar el mensaje en el input
     } finally {
       setSendingMessage(false);
     }
@@ -346,9 +369,10 @@ const ChatWindow = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+  // 3. Ajuste de la dependencia del useEffect para el scroll
   useEffect(() => {
     scrollToBottom();
-  }, [currentMessages, selectedUser]);
+  }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]); // Se dispara cuando cambia la cantidad de mensajes
 
   const filteredUsers = users.filter((user) => {
     const matchesName = user.name
@@ -407,10 +431,20 @@ const ChatWindow = () => {
 
     const messages = conversations[selectedUser.id].messages;
     // Find the last message that was NOT sent by the assistant (i.e., from the user).
+    // Use a deep copy to avoid mutating the original array if .reverse() is used without .slice()
     const lastUserMsg = messages
       .slice()
       .reverse()
       .find((msg) => !msg.fromMe);
+
+    console.log(
+      "calculateCanSendMessagesNow: All messages for current user:",
+      messages
+    );
+    console.log(
+      "calculateCanSendMessagesNow: Found last user message:",
+      lastUserMsg
+    );
 
     // If there's no message from the user, it means it's a new conversation
     // or only the assistant has sent messages. In this case, allow sending.
@@ -427,8 +461,12 @@ const ChatWindow = () => {
       isNaN(lastUserMsg.createdAt.getTime())
     ) {
       console.warn(
-        "calculateCanSendMessagesNow: Invalid createdAt date found for last user message:",
+        "calculateCanSendMessagesNow: Invalid createdAt date found for last user message. Type:",
+        typeof lastUserMsg.createdAt,
+        "Value:",
         lastUserMsg.createdAt,
+        "isNaN(getTime()):",
+        isNaN(lastUserMsg.createdAt?.getTime()),
         ". Returning true to avoid blocking."
       );
       return true; // If date is invalid, assume it's an error and allow sending to not block agent.
