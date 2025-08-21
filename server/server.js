@@ -47,7 +47,7 @@ app.get("/api/get-templates", async (req, res) => {
 // Tu endpoint de API
 app.post("/api/send-message", async (req, res) => {
   const { recipientId, message } = req.body;
-
+console.log(recipientId)
   if (!recipientId || !message) {
     return res
       .status(400)
@@ -56,39 +56,43 @@ app.post("/api/send-message", async (req, res) => {
 
   try {
     const fbRes = await fetch(
-      "https://graph.facebook.com/v22.0/me/messages?access_token=EAAKHaPNHhhwBO22Lu72iyakHKww9mpYXJh3ZAqqWQZCXl5I3dyPijBetTkcqXBWogeP0RcgFdAAdtRjeX2DkMHHdZCpb0nA4aHt4IVnzQJQaV0QNztj9UPWYQGuFJhR5gGAKZAiIVkwcpKp2qdH0ZAolkF1qXAne1Hd9wNFSk8oaogYdgs8dFWcdSuO0grqjGaPDHrqaoLQZDZD",
+      "https://graph.facebook.com/v22.0/734180689784697/messages",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer EAALVZCVOXajwBPD0l7lQweezStIsZBLiznoEkO7mmYZCrzzMwOAkODaFClc7XXXGGBb4l0jcK3Jf8GlhZApiCRT15R30cC9ZApH0EIEfeYZC1vAIVZCCC2ZAqwWKq1KcXnwLvy4F7d1x5AQLGrZAQ0brZCvbiZCslTdiKXD5IZClsXYxRAufMubXMBO1EOrP6sGdlgZDZD`, // ⚠️ usa tu token desde .env
         },
         body: JSON.stringify({
-          recipient: {
-            id: recipientId, // 👈 usamos el que vino del frontend
-          },
-          messaging_type: "RESPONSE",
-          message: {
-            text: message,
+          messaging_product: "whatsapp",
+          to: recipientId, // 👈 número de WhatsApp en formato internacional (ej: 5215512345678)
+          type: "text",
+          text: {
+            preview_url: false,
+            body: message,
           },
         }),
       }
     );
+    console.log(fbRes)
 
     const data = await fbRes.json();
+    console.log(data)
 
     if (!fbRes.ok) {
-      console.error("Error sending message to Facebook:", data);
+      console.error("Error sending message to WhatsApp:", data);
       return res.status(500).json({ error: data });
     }
 
-    // si todo salió bien
+    // ✅ todo salió bien
     return res.status(200).json({ success: true, data });
 
   } catch (err) {
-    console.error("Network error sending message to Facebook:", err);
+    console.error("Network error sending message to WhatsApp:", err);
     return res.status(500).json({ error: "Network error" });
   }
 });
+
 
 
 // 🌐 SERVIR FRONTEND EN PRODUCCIÓN

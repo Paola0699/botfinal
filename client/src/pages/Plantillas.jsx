@@ -12,11 +12,11 @@ import {
   Paper,
   Select,
   Stack,
-  Toolbar,
   Typography,
 } from "@mui/material";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 // Define las categorías disponibles, incluyendo "TODOS"
 const categories = ["TODOS", "MARKETING", "MARKETING LITE", "UTILITY"];
@@ -172,15 +172,18 @@ const Plantillas = () => {
                 ))}
               </Select>
             </FormControl>
-            <Button
-              variant="contained"
-              sx={{
-                borderRadius: 2,
-                background: "linear-gradient(45deg, #6A11CB, #2575FC)",
-              }}
-            >
-              + Nueva plantilla
-            </Button>
+            <Link to={"/plantilla-nueva"}>
+              <Button
+                variant="contained"
+                sx={{
+                  borderRadius: 2,
+                  background: "linear-gradient(45deg, #6A11CB, #2575FC)",
+                  textTransform: "capitalize",
+                }}
+              >
+                + Nueva plantilla
+              </Button>
+            </Link>
           </Box>
           <Divider />
         </Paper>
