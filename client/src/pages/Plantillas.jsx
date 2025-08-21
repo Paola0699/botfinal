@@ -39,13 +39,25 @@ const getStatusColor = (status) => {
 const getCategoryColor = (category) => {
   switch (category) {
     case "MARKETING":
-      return "primary"; // Un color azul/púrpura
+      return {
+        bgcolor: "#D9EDF7", // Un azul claro suave
+        color: "#0C5460", // Un azul oscuro para el texto
+      };
     case "MARKETING LITE":
-      return "secondary"; // Un color púrpura/rosa
+      return {
+        bgcolor: "#F8D7DA", // Un rosa claro suave
+        color: "#721C24", // Un rojo oscuro para el texto
+      };
     case "UTILITY":
-      return "warning"; // Un color azul claro
+      return {
+        bgcolor: "#FFF3CD", // Un amarillo claro suave
+        color: "#856404", // Un marrón/amarillo oscuro para el texto
+      };
     default:
-      return "default"; // Color por defecto si la categoría no coincide
+      return {
+        bgcolor: "#E0E0E0", // Gris claro por defecto
+        color: "#424242", // Gris oscuro para el texto por defecto
+      };
   }
 };
 
@@ -130,7 +142,6 @@ const Plantillas = () => {
       </Box>
     );
   }
-
   return (
     <>
       <Box p={5}>
@@ -224,7 +235,11 @@ const Plantillas = () => {
                     Categoría:{" "}
                     <Chip
                       label={plantilla.categoria}
-                      color={getCategoryColor(plantilla.categoria)} // Aquí se aplica el color dinámico
+                      sx={{
+                        ...getCategoryColor(plantilla.categoria), // Aplica los colores de fondo y texto
+                        fontWeight: "bold", // Opcional: para que el texto sea negrita como el de idioma
+                        borderRadius: "4px", // Opcional: bordes menos redondeados
+                      }}
                     />{" "}
                     {/* Muestra la categoría de la plantilla */}
                   </Typography>
