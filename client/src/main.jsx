@@ -33,7 +33,7 @@ if (rootElement) {
           {/* Rutas privadas */}
           <Route element={<PrivateRoute />}>
             <Route path="/" element={<App />}>
-              <Route index element={<Home />} />
+              <Route index element={<Cadenas />} />
               <Route path="cadenas" element={<Cadenas />} />
               <Route path="leads" element={<Leads />} />
               <Route path="cadenas_masivas" element={<CadenasMasivas />} />
