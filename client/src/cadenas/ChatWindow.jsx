@@ -134,11 +134,27 @@ const ChatWindow = () => {
   const handlePauseChat = async () => {
     if (!selectedUser) return;
     const pauseUntil = new Date(Date.now() + 40 * 60 * 1000);
-    await supabase
-      .from("intervenciones_agente")
-      .upsert([{ sender_id: selectedUser.id, pause_until: pauseUntil }], {
+    const { data, error } = await supabase.from("intervenciones_agente").upsert(
+      [
+        {
+          sender_id: selectedUser.id,
+          pause_until: pauseUntil.toISOString(), // Asegúrate de enviar en formato ISO
+          pause: true, // Agrega el atributo 'pause' con valor true
+        },
+      ],
+      {
         onConflict: ["sender_id"],
-      });
+      }
+    );
+
+    if (error) {
+      console.error("Error al pausar el chat en Supabase:", error);
+      // Aquí podrías añadir lógica para mostrar un mensaje de error al usuario
+    } else {
+      console.log("Chat pausado exitosamente en Supabase:", data);
+      // Aquí podrías añadir lógica para mostrar un mensaje de éxito al usuario
+      // o actualizar el estado de la UI para reflejar que el chat está pausado.
+    }
   };
 
   useEffect(() => {
