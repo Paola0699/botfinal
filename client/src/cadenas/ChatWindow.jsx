@@ -21,6 +21,8 @@ import { useEffect, useRef, useState } from "react";
 import supabase from "../supabaseClient";
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow"; // Importado el nuevo icono de play
+import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled"; // Importado el nuevo icono de pausa
 
 // Importar iconos para los canales
 import InstagramIcon from "@mui/icons-material/Instagram";
@@ -111,6 +113,7 @@ const ChatWindow = () => {
           const senderId = record.fields["session_id"];
           if (senderId) {
             profiles[senderId] = {
+              id_airtable: record.id,
               name: record.fields["nombre"] || senderId,
               email: record.fields["username"] || "Sin correo",
               phone: record.fields["telefono"] || "Sin teléfono",
@@ -120,6 +123,8 @@ const ChatWindow = () => {
               temperatura: normalizeTemperatureInternal(
                 record.fields["temperatura"]
               ),
+              // ADDED: Fetch 'pause' status from Airtable
+              isPaused: record.fields["pause"] || false,
             };
           }
         });
@@ -133,27 +138,130 @@ const ChatWindow = () => {
 
   const handlePauseChat = async () => {
     if (!selectedUser) return;
-    const pauseUntil = new Date(Date.now() + 40 * 60 * 1000);
-    const { data, error } = await supabase.from("intervenciones_agente").upsert(
-      [
-        {
-          sender_id: selectedUser.id,
-          pause_until: pauseUntil.toISOString(), // Asegúrate de enviar en formato ISO
-          pause: true, // Agrega el atributo 'pause' con valor true
-        },
-      ],
-      {
-        onConflict: ["sender_id"],
-      }
-    );
 
-    if (error) {
-      console.error("Error al pausar el chat en Supabase:", error);
-      // Aquí podrías añadir lógica para mostrar un mensaje de error al usuario
-    } else {
-      console.log("Chat pausado exitosamente en Supabase:", data);
-      // Aquí podrías añadir lógica para mostrar un mensaje de éxito al usuario
-      // o actualizar el estado de la UI para reflejar que el chat está pausado.
+    try {
+      // Ya tenemos el id_airtable en selectedUser, no es necesario buscar de nuevo
+      const recordId = selectedUser.id_airtable;
+
+      if (!recordId) {
+        console.warn(
+          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede pausar.`
+        );
+        return;
+      }
+
+      const updateResponse = await fetch(
+        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fields: {
+              pause: true,
+            },
+          }),
+        }
+      );
+
+      if (!updateResponse.ok) {
+        throw new Error(
+          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
+        );
+      }
+
+      console.log(
+        "Atributo 'pause' actualizado a true en Airtable para el record:",
+        recordId
+      );
+
+      // ADDED: Update local state after successful Airtable update
+      setUserProfiles((prevProfiles) => ({
+        ...prevProfiles,
+        [selectedUser.id]: {
+          ...prevProfiles[selectedUser.id],
+          isPaused: true,
+        },
+      }));
+
+      // Also update selectedUser directly for immediate UI reflection if it's the same user
+      setSelectedUser((prevSelectedUser) => {
+        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
+          return {
+            ...prevSelectedUser,
+            isPaused: true,
+          };
+        }
+        return prevSelectedUser;
+      });
+    } catch (airtableError) {
+      console.error("Error al interactuar con Airtable:", airtableError);
+    }
+  };
+
+  // NEW: Function to unpause chat
+  const handleUnpauseChat = async () => {
+    if (!selectedUser) return;
+
+    try {
+      const recordId = selectedUser.id_airtable;
+
+      if (!recordId) {
+        console.warn(
+          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede despausar.`
+        );
+        return;
+      }
+
+      const updateResponse = await fetch(
+        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            fields: {
+              pause: false, // Set pause to false
+            },
+          }),
+        }
+      );
+
+      if (!updateResponse.ok) {
+        throw new Error(
+          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
+        );
+      }
+
+      console.log(
+        "Atributo 'pause' actualizado a false en Airtable para el record:",
+        recordId
+      );
+
+      // Update local state
+      setUserProfiles((prevProfiles) => ({
+        ...prevProfiles,
+        [selectedUser.id]: {
+          ...prevProfiles[selectedUser.id],
+          isPaused: false,
+        },
+      }));
+
+      setSelectedUser((prevSelectedUser) => {
+        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
+          return {
+            ...prevSelectedUser,
+            isPaused: false,
+          };
+        }
+        return prevSelectedUser;
+      });
+    } catch (airtableError) {
+      console.error("Error al interactuar con Airtable:", airtableError);
     }
   };
 
@@ -210,19 +318,21 @@ const ChatWindow = () => {
 
       const uniqueUsers = Object.keys(groupedBySession)
         .map((sessionId) => {
-          const profile = userProfiles[sessionId];
+          const profile = userProfiles[sessionId]; // Este 'profile' sí contiene 'id_aitable'
           const lastMessage =
             groupedBySession[sessionId][groupedBySession[sessionId].length - 1];
           const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
           return {
             id: sessionId,
+            id_airtable: profile?.id_airtable,
             name: profile?.name || sessionId,
+            email: profile?.email || "Sin correo",
+            phone: profile?.phone || "Sin teléfono",
             avatar:
               profile?.avatar ||
               `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-            email: profile?.email || "Sin correo",
-            phone: profile?.phone || "Sin teléfono",
             temperatura: normalizeTemperatureInternal(profile?.temperatura),
+            isPaused: profile?.isPaused || false, // ADDED: Carry over isPaused status
             lastCreatedAt,
           };
         })
@@ -252,6 +362,17 @@ const ChatWindow = () => {
           !uniqueUsers.some((u) => u.id === selectedUser.id)
         ) {
           setSelectedUser(uniqueUsers[0]);
+        } else {
+          // ADDED: Ensure selectedUser is updated with the latest isPaused status
+          const currentSelectedUserUpdated = uniqueUsers.find(
+            (u) => u.id === selectedUser.id
+          );
+          if (
+            currentSelectedUserUpdated &&
+            currentSelectedUserUpdated.isPaused !== selectedUser.isPaused
+          ) {
+            setSelectedUser(currentSelectedUserUpdated);
+          }
         }
       } else {
         setSelectedUser(null);
@@ -262,7 +383,7 @@ const ChatWindow = () => {
     if (Object.keys(userProfiles).length > 0 || !loading) {
       getChatLog();
     }
-  }, [userProfiles, selectedUser, loading]);
+  }, [userProfiles, selectedUser, loading]); // Added userProfiles to dependencies
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
@@ -438,6 +559,14 @@ const ChatWindow = () => {
 
   // REVISED LOGIC: Determines if messages can be sent
   const calculateCanSendMessagesNow = () => {
+    // ADDED: If chat is paused, cannot send messages
+    if (selectedUser?.isPaused) {
+      console.log(
+        "calculateCanSendMessagesNow: Chat is paused. Returning false."
+      );
+      return false;
+    }
+
     if (!selectedUser || !conversations[selectedUser.id]) {
       console.log(
         "calculateCanSendMessagesNow: No selected user or conversation data. Returning true (default)."
@@ -623,7 +752,6 @@ const ChatWindow = () => {
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
               const canal = userConvo?.canal;
-
               return (
                 <ListItem
                   key={user.id}
@@ -660,6 +788,12 @@ const ChatWindow = () => {
                         >
                           {user.name}
                         </Typography>
+                        {/* ADDED: Pause icon next to name if chat is paused */}
+                        {user.isPaused && (
+                          <PauseCircleFilledIcon
+                            sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
+                          />
+                        )}
                         {lastMsg && (
                           <Typography
                             component="span"
@@ -738,8 +872,14 @@ const ChatWindow = () => {
             </Typography>
             {selectedUser &&
               getChannelIcon(conversations[selectedUser.id]?.canal)}
-            <IconButton onClick={handlePauseChat}>
-              <PauseIcon />
+            {/* MODIFIED: Conditional button for pause/play */}
+            <IconButton
+              onClick={
+                selectedUser?.isPaused ? handleUnpauseChat : handlePauseChat
+              }
+              disabled={!selectedUser} // Disable if no user is selected
+            >
+              {selectedUser?.isPaused ? <PlayArrowIcon /> : <PauseIcon />}
             </IconButton>
           </Box>
           <Box
@@ -796,6 +936,17 @@ const ChatWindow = () => {
               >
                 No se pueden enviar mensajes. El último mensaje del usuario
                 tiene más de 24 horas. Solo se puede compartir una plantilla.
+              </Typography>
+            )}
+            {!selectedUser?.isPaused && (
+              <Typography
+                variant="caption"
+                color="warning.main"
+                sx={{ mb: 1, textAlign: "center" }}
+              >
+                Este chat está siendo atendido por la IA de SYNCRO. Si deseas
+                intervenir como agente, utiliza el botón de pausa en la parte
+                superior para detener el bot.
               </Typography>
             )}
             <Box sx={{ display: "flex", width: "100%" }}>
