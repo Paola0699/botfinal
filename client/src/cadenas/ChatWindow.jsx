@@ -21,21 +21,21 @@ import { useEffect, useRef, useState } from "react";
 import supabase from "../supabaseClient";
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow"; // Importado el nuevo icono de play
-import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled"; // Importado el nuevo icono de pausa
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
 
 // Importar iconos para los canales
 import InstagramIcon from "@mui/icons-material/Instagram";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import FacebookIcon from "@mui/icons-material/Facebook";
-import LanguageIcon from "@mui/icons-material/Language"; // Para "web" o "website"
-import QuestionMarkIcon from "@mui/icons-material/QuestionMark"; // Para canal desconocido
+import LanguageIcon from "@mui/icons-material/Language";
+import QuestionMarkIcon from "@mui/icons-material/QuestionMark";
 
 // Importar iconos para la temperatura
-import AcUnitIcon from "@mui/icons-material/AcUnit"; // Frío (copo de nieve)
-import WbSunnyIcon from "@mui/icons-material/WbSunny"; // Tibio (sol pequeño)
-import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment"; // Caliente (fuego)
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline"; // Desconocido
+import AcUnitIcon from "@mui/icons-material/AcUnit";
+import WbSunnyIcon from "@mui/icons-material/WbSunny";
+import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 
 const API_KEY = import.meta.env.VITE_API_KEY;
 const BASE_ID = import.meta.env.VITE_BASE_ID;
@@ -55,7 +55,7 @@ const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
 
 // Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
 const normalizeTemperatureInternal = (temp) => {
-  if (!temp) return "desconocido"; // Si temp es undefined, null o vacío, es desconocido
+  if (!temp) return "desconocido";
   const lowerTemp = String(temp)
     .toLowerCase()
     .normalize("NFD")
@@ -63,7 +63,40 @@ const normalizeTemperatureInternal = (temp) => {
   if (TEMPERATURE_INTERNAL_VALUES.includes(lowerTemp)) {
     return lowerTemp;
   }
-  return "desconocido"; // Si no coincide con ningún valor conocido, es desconocido
+  return "desconocido";
+};
+
+// Funciones para obtener iconos de canal (MOVIDAS FUERA DEL COMPONENTE)
+const getChannelIcon = (channel, size = 16) => {
+  switch (channel?.toLowerCase()) {
+    case "instagram":
+      return <InstagramIcon sx={{ fontSize: size, color: "#E4405F" }} />;
+    case "whatsapp":
+      return <WhatsAppIcon sx={{ fontSize: size, color: "#25D366" }} />;
+    case "facebook":
+      return <FacebookIcon sx={{ fontSize: size, color: "#1877F2" }} />;
+    case "web":
+    case "website":
+      return <LanguageIcon sx={{ fontSize: size, color: "#333" }} />;
+    default:
+      return <QuestionMarkIcon sx={{ fontSize: size, color: "#999" }} />;
+  }
+};
+
+// Funciones para obtener iconos de temperatura (MOVIDAS FUERA DEL COMPONENTE)
+const getTemperatureIcon = (temperatureInternal, size = 16) => {
+  switch (temperatureInternal) {
+    case "frio":
+      return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF" }} />;
+    case "tibio":
+      return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700" }} />;
+    case "caliente":
+      return (
+        <LocalFireDepartmentIcon sx={{ fontSize: size, color: "#FF4500" }} />
+      );
+    default:
+      return <HelpOutlineIcon sx={{ fontSize: size, color: "#999" }} />;
+  }
 };
 
 const ChatWindow = () => {
@@ -81,17 +114,6 @@ const ChatWindow = () => {
     "caliente",
   ]);
   const [loading, setLoading] = useState(true);
-
-  // Debugging log for selectedUser changes
-  useEffect(() => {
-    console.log("Selected User changed:", selectedUser?.id);
-    if (selectedUser) {
-      console.log(
-        "Conversations for selected user:",
-        conversations[selectedUser.id]
-      );
-    }
-  }, [selectedUser, conversations]); // Added conversations to dependencies for more context
 
   useEffect(() => {
     const fetchAirtableRecords = async () => {
@@ -123,7 +145,6 @@ const ChatWindow = () => {
               temperatura: normalizeTemperatureInternal(
                 record.fields["temperatura"]
               ),
-              // ADDED: Fetch 'pause' status from Airtable
               isPaused: record.fields["pause"] || false,
             };
           }
@@ -140,7 +161,6 @@ const ChatWindow = () => {
     if (!selectedUser) return;
 
     try {
-      // Ya tenemos el id_airtable en selectedUser, no es necesario buscar de nuevo
       const recordId = selectedUser.id_airtable;
 
       if (!recordId) {
@@ -177,7 +197,6 @@ const ChatWindow = () => {
         recordId
       );
 
-      // ADDED: Update local state after successful Airtable update
       setUserProfiles((prevProfiles) => ({
         ...prevProfiles,
         [selectedUser.id]: {
@@ -186,7 +205,6 @@ const ChatWindow = () => {
         },
       }));
 
-      // Also update selectedUser directly for immediate UI reflection if it's the same user
       setSelectedUser((prevSelectedUser) => {
         if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
           return {
@@ -201,7 +219,6 @@ const ChatWindow = () => {
     }
   };
 
-  // NEW: Function to unpause chat
   const handleUnpauseChat = async () => {
     if (!selectedUser) return;
 
@@ -242,7 +259,6 @@ const ChatWindow = () => {
         recordId
       );
 
-      // Update local state
       setUserProfiles((prevProfiles) => ({
         ...prevProfiles,
         [selectedUser.id]: {
@@ -267,7 +283,10 @@ const ChatWindow = () => {
 
   useEffect(() => {
     const getChatLog = async () => {
-      const { data, error } = await supabase.from("chatlog").select("*");
+      // MODIFIED: Select 'id' and 'leido' explicitly
+      const { data, error } = await supabase
+        .from("chatlog")
+        .select("id, *, leido");
       if (error) {
         console.error("Error fetching chat log:", error);
         setLoading(false);
@@ -282,6 +301,7 @@ const ChatWindow = () => {
         }
         const createdAt = new Date(msg.created_at);
         acc[sessionId].push({
+          id: msg.id, // ADDED: Include message id
           fromMe: msg.role === "assistant",
           text: msg.content,
           time: createdAt.toLocaleString("es-MX", {
@@ -291,26 +311,11 @@ const ChatWindow = () => {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          createdAt, // Mantener el objeto Date para comparaciones de tiempo
+          createdAt,
+          leido: msg.leido,
         });
         return acc;
       }, {});
-
-      // Debugging: Log the messages and their createdAt dates
-      Object.keys(groupedBySession).forEach((sessionId) => {
-        console.log(`Messages for session ${sessionId}:`);
-        groupedBySession[sessionId].forEach((msg) => {
-          console.log(
-            `  - Role: ${msg.fromMe ? "assistant" : "user"}, Content: "${
-              msg.text
-            }", CreatedAt: ${
-              msg.createdAt
-            } (Type: ${typeof msg.createdAt}, Valid: ${
-              msg.createdAt instanceof Date && !isNaN(msg.createdAt.getTime())
-            })`
-          );
-        });
-      });
 
       Object.keys(groupedBySession).forEach((sessionId) => {
         groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
@@ -318,10 +323,20 @@ const ChatWindow = () => {
 
       const uniqueUsers = Object.keys(groupedBySession)
         .map((sessionId) => {
-          const profile = userProfiles[sessionId]; // Este 'profile' sí contiene 'id_aitable'
-          const lastMessage =
-            groupedBySession[sessionId][groupedBySession[sessionId].length - 1];
+          const profile = userProfiles[sessionId];
+          const messagesForSession = groupedBySession[sessionId];
+          const lastMessage = messagesForSession[messagesForSession.length - 1];
           const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
+
+          // MODIFIED: Calculate unreadCount
+          let unreadCount = 0;
+          messagesForSession.forEach((msg) => {
+            if (msg.fromMe === false && msg.leido === false) {
+              // Message from the user AND unread
+              unreadCount++;
+            }
+          });
+
           return {
             id: sessionId,
             id_airtable: profile?.id_airtable,
@@ -332,8 +347,9 @@ const ChatWindow = () => {
               profile?.avatar ||
               `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
             temperatura: normalizeTemperatureInternal(profile?.temperatura),
-            isPaused: profile?.isPaused || false, // ADDED: Carry over isPaused status
+            isPaused: profile?.isPaused || false,
             lastCreatedAt,
+            unreadCount: unreadCount, // MODIFIED: Use unreadCount
           };
         })
         .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
@@ -345,12 +361,13 @@ const ChatWindow = () => {
         const canal = groupedBySession[sessionId].canal || "desconocido";
         cleanedConversations[sessionId] = {
           canal,
-          // ¡CORRECCIÓN APLICADA AQUÍ! Mapeo explícito para asegurar que createdAt se mantenga
           messages: messages.map((msg) => ({
+            id: msg.id, // Ensure 'id' is passed to conversation messages
             fromMe: msg.fromMe,
             text: msg.text,
             time: msg.time,
-            createdAt: msg.createdAt, // Asegúrate de incluir createdAt (el objeto Date)
+            createdAt: msg.createdAt,
+            leido: msg.leido,
           })),
         };
       });
@@ -363,14 +380,16 @@ const ChatWindow = () => {
         ) {
           setSelectedUser(uniqueUsers[0]);
         } else {
-          // ADDED: Ensure selectedUser is updated with the latest isPaused status
           const currentSelectedUserUpdated = uniqueUsers.find(
             (u) => u.id === selectedUser.id
           );
           if (
             currentSelectedUserUpdated &&
-            currentSelectedUserUpdated.isPaused !== selectedUser.isPaused
+            (currentSelectedUserUpdated.isPaused !== selectedUser.isPaused ||
+              currentSelectedUserUpdated.unreadCount !==
+                selectedUser.unreadCount)
           ) {
+            // Check for unread status change too
             setSelectedUser(currentSelectedUserUpdated);
           }
         }
@@ -383,20 +402,90 @@ const ChatWindow = () => {
     if (Object.keys(userProfiles).length > 0 || !loading) {
       getChatLog();
     }
-  }, [userProfiles, selectedUser, loading]); // Added userProfiles to dependencies
+  }, [userProfiles, selectedUser, loading]);
+
+  // NEW: Effect to mark messages as read when a chat is selected
+  useEffect(() => {
+    const markMessagesAsRead = async () => {
+      if (!selectedUser || !conversations[selectedUser.id]) {
+        return;
+      }
+
+      const messagesToMarkRead = conversations[selectedUser.id].messages.filter(
+        (msg) => !msg.fromMe && msg.leido === false
+      );
+
+      if (messagesToMarkRead.length === 0) {
+        return; // No unread messages from this user
+      }
+
+      const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
+      if (messageIdsToUpdate.length === 0) return;
+
+      try {
+        const { error: updateError } = await supabase
+          .from("chatlog")
+          .update({ leido: true })
+          .in("id", messageIdsToUpdate);
+
+        if (updateError) {
+          console.error(
+            "Error marking messages as read in Supabase:",
+            updateError
+          );
+          return;
+        }
+        console.log(
+          `Marked ${messageIdsToUpdate.length} messages as read for user ${selectedUser.id}`
+        );
+
+        // Update local state (conversations)
+        setConversations((prevConversations) => {
+          const newConvo = { ...prevConversations[selectedUser.id] };
+          newConvo.messages = newConvo.messages.map((msg) =>
+            msg.fromMe === false && msg.leido === false
+              ? { ...msg, leido: true }
+              : msg
+          );
+          return {
+            ...prevConversations,
+            [selectedUser.id]: newConvo,
+          };
+        });
+
+        // Update local state (users) to clear unread count
+        setUsers((prevUsers) =>
+          prevUsers.map((user) =>
+            user.id === selectedUser.id ? { ...user, unreadCount: 0 } : user
+          )
+        );
+      } catch (error) {
+        console.error("Error in markMessagesAsRead:", error);
+      }
+    };
+
+    // Only run if a user is selected and has unread messages
+    // The condition `selectedUser.unreadCount > 0` ensures we only try to mark as read if there are actual unread messages
+    if (selectedUser && selectedUser.unreadCount > 0) {
+      markMessagesAsRead();
+    }
+  }, [selectedUser, conversations]); // Re-run if selectedUser changes or new messages arrive in the current convo
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
   const handleSend = async () => {
+    // La validación de newMessage.trim() se mantiene para evitar enviar mensajes vacíos
     if (!newMessage.trim() || !selectedUser) return;
 
-    // Asegurarse de que el envío esté permitido antes de proceder
-    if (!canSendMessagesNow) {
+    // La capacidad de enviar mensajes NO está ligada al estado de pausa aquí,
+    // solo a la regla de las 24 horas (ver isInputDisabled)
+    if (!isFreeFormMessageAllowedBy24HourRule()) {
       console.warn(
-        "No se puede enviar el mensaje: el chat está inactivo o no hay usuario seleccionado."
+        "No se puede enviar el mensaje: el último mensaje del usuario tiene más de 24 horas."
       );
+      // Opcional: mostrar un toast o alerta al usuario si intenta enviar
       return;
     }
 
@@ -416,7 +505,6 @@ const ChatWindow = () => {
       createdAt: now,
     };
 
-    // 1. Actualización Optimista del UI
     setConversations((prevConversations) => ({
       ...prevConversations,
       [selectedUser.id]: {
@@ -427,8 +515,8 @@ const ChatWindow = () => {
         ],
       },
     }));
-    setNewMessage(""); // Limpiar el input inmediatamente
-    setSendingMessage(true); // Indicar que se está enviando
+    setNewMessage("");
+    setSendingMessage(true);
 
     try {
       const res = await fetch("/api/send-message", {
@@ -436,43 +524,40 @@ const ChatWindow = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipientId: selectedUser.id,
-          message: messageToSend.text, // Usar el texto del mensaje optimista
+          message: messageToSend.text,
         }),
       });
 
       if (res.ok) {
-        // Guardar el mensaje en Supabase después de un envío exitoso a la API
         const { data, error } = await supabase.from("chatlog").insert([
           {
             session_id: selectedUser.id,
-            role: "assistant", // Rol del agente
-            content: messageToSend.text, // Usar el texto del mensaje optimista
-            created_at: now.toISOString(), // Formato ISO para Supabase
-            canal: conversations[selectedUser.id]?.canal || "desconocido", // Guardar el canal
+            role: "assistant",
+            content: messageToSend.text,
+            created_at: now.toISOString(),
+            canal: conversations[selectedUser.id]?.canal || "desconocido",
+            leido: true,
           },
         ]);
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
-          // Opcional: Mostrar un error al usuario si falla la inserción en Supabase
         } else {
           console.log("Mensaje guardado en Supabase:", data);
         }
 
-        // Actualizar la última actividad del usuario seleccionado para reordenar la lista
         setUsers((prevUsers) => {
           const updatedUser = {
             ...selectedUser,
             lastCreatedAt: now,
+            unreadCount: 0, // MODIFIED: Clear unread count when agent sends a message
           };
           const otherUsers = prevUsers.filter((u) => u.id !== selectedUser.id);
-          // Reordenar la lista para que el usuario con el mensaje más reciente esté arriba
           return [updatedUser, ...otherUsers].sort(
             (a, b) => b.lastCreatedAt - a.lastCreatedAt
           );
         });
       } else {
-        // 2. Revertir actualización optimista si la API falla
         console.error(
           "Error al enviar mensaje a la API. Revirtiendo UI.",
           res.status,
@@ -482,22 +567,21 @@ const ChatWindow = () => {
           ...prevConversations,
           [selectedUser.id]: {
             ...prevConversations[selectedUser.id],
-            messages: prevConversations[selectedUser.id].messages.slice(0, -1), // Eliminar el último mensaje
+            messages: prevConversations[selectedUser.id].messages.slice(0, -1),
           },
         }));
-        setNewMessage(messageToSend.text); // Restaurar el mensaje en el input
+        setNewMessage(messageToSend.text);
       }
     } catch (err) {
-      // 2. Revertir actualización optimista si hay un error de red
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
       setConversations((prevConversations) => ({
         ...prevConversations,
         [selectedUser.id]: {
           ...prevConversations[selectedUser.id],
-          messages: prevConversations[selectedUser.id].messages.slice(0, -1), // Eliminar el último mensaje
+          messages: prevConversations[selectedUser.id].messages.slice(0, -1),
         },
       }));
-      setNewMessage(messageToSend.text); // Restaurar el mensaje en el input
+      setNewMessage(messageToSend.text);
     } finally {
       setSendingMessage(false);
     }
@@ -506,10 +590,9 @@ const ChatWindow = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-  // 3. Ajuste de la dependencia del useEffect para el scroll
   useEffect(() => {
     scrollToBottom();
-  }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]); // Se dispara cuando cambia la cantidad de mensajes
+  }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]);
 
   const filteredUsers = users.filter((user) => {
     const matchesName = user.name
@@ -526,128 +609,50 @@ const ChatWindow = () => {
     return matchesName && matchesChannel && matchesTemperature;
   });
 
-  const getChannelIcon = (channel, size = 16) => {
-    switch (channel?.toLowerCase()) {
-      case "instagram":
-        return <InstagramIcon sx={{ fontSize: size, color: "#E4405F" }} />;
-      case "whatsapp":
-        return <WhatsAppIcon sx={{ fontSize: size, color: "#25D366" }} />;
-      case "facebook":
-        return <FacebookIcon sx={{ fontSize: size, color: "#1877F2" }} />;
-      case "web":
-      case "website":
-        return <LanguageIcon sx={{ fontSize: size, color: "#333" }} />;
-      default:
-        return <QuestionMarkIcon sx={{ fontSize: size, color: "#999" }} />;
-    }
-  };
-
-  const getTemperatureIcon = (temperatureInternal, size = 16) => {
-    switch (temperatureInternal) {
-      case "frio":
-        return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF" }} />;
-      case "tibio":
-        return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700" }} />;
-      case "caliente":
-        return (
-          <LocalFireDepartmentIcon sx={{ fontSize: size, color: "#FF4500" }} />
-        );
-      default:
-        return <HelpOutlineIcon sx={{ fontSize: size, color: "#999" }} />;
-    }
-  };
-
-  // REVISED LOGIC: Determines if messages can be sent
-  const calculateCanSendMessagesNow = () => {
-    // ADDED: If chat is paused, cannot send messages
-    if (selectedUser?.isPaused) {
-      console.log(
-        "calculateCanSendMessagesNow: Chat is paused. Returning false."
-      );
-      return false;
-    }
-
+  // Nueva función para verificar la regla de las 24 horas (independiente del estado de pausa)
+  const isFreeFormMessageAllowedBy24HourRule = () => {
     if (!selectedUser || !conversations[selectedUser.id]) {
-      console.log(
-        "calculateCanSendMessagesNow: No selected user or conversation data. Returning true (default)."
-      );
-      return true; // If no user selected or no conversation data, allow sending.
-    }
-
-    const messages = conversations[selectedUser.id].messages;
-    // Find the last message that was NOT sent by the assistant (i.e., from the user).
-    // Use a deep copy to avoid mutating the original array if .reverse() is used without .slice()
-    const lastUserMsg = messages
-      .slice()
-      .reverse()
-      .find((msg) => !msg.fromMe);
-
-    console.log(
-      "calculateCanSendMessagesNow: All messages for current user:",
-      messages
-    );
-    console.log(
-      "calculateCanSendMessagesNow: Found last user message:",
-      lastUserMsg
-    );
-
-    // If there's no message from the user, it means it's a new conversation
-    // or only the assistant has sent messages. In this case, allow sending.
-    if (!lastUserMsg) {
-      console.log(
-        "calculateCanSendMessagesNow: No messages from user found. Returning true."
-      );
+      // Si no hay usuario seleccionado o datos de conversación, asumimos que se puede enviar
       return true;
     }
 
-    // Ensure lastUserMsg.createdAt is a valid Date object
+    const messages = conversations[selectedUser.id].messages;
+    const lastUserMsg = messages
+      .slice()
+      .reverse()
+      .find((msg) => !msg.fromMe); // Buscar el último mensaje del usuario
+
+    if (!lastUserMsg) {
+      // Si no hay mensajes del usuario, asumimos que se puede enviar libremente
+      return true;
+    }
+
     if (
       !(lastUserMsg.createdAt instanceof Date) ||
       isNaN(lastUserMsg.createdAt.getTime())
     ) {
       console.warn(
-        "calculateCanSendMessagesNow: Invalid createdAt date found for last user message. Type:",
-        typeof lastUserMsg.createdAt,
-        "Value:",
-        lastUserMsg.createdAt,
-        "isNaN(getTime()):",
-        isNaN(lastUserMsg.createdAt?.getTime()),
-        ". Returning true to avoid blocking."
+        "Fecha de creación inválida para el último mensaje del usuario. Asumiendo que se permite el mensaje de forma libre."
       );
-      return true; // If date is invalid, assume it's an error and allow sending to not block agent.
+      return true;
     }
 
     const timeDifference = Date.now() - lastUserMsg.createdAt.getTime();
     const twentyFourHoursInMs = 24 * 60 * 60 * 1000;
 
-    console.log(
-      `calculateCanSendMessagesNow: Last user message time: ${lastUserMsg.createdAt.toISOString()}`
-    );
-    console.log(
-      `calculateCanSendMessagesNow: Current time: ${new Date().toISOString()}`
-    );
-    console.log(
-      `calculateCanSendMessagesNow: Time difference (ms): ${timeDifference}`
-    );
-    console.log(
-      `calculateCanSendMessagesNow: 24 hours (ms): ${twentyFourHoursInMs}`
-    );
-    console.log(
-      `calculateCanSendMessagesNow: Is timeDifference < 24h? ${
-        timeDifference < twentyFourHoursInMs
-      }`
-    );
-
     return timeDifference < twentyFourHoursInMs;
   };
 
-  const canSendMessagesNow = calculateCanSendMessagesNow();
+  // La entrada está deshabilitada solo si no hay usuario, se está enviando un mensaje,
+  // o si la regla de las 24 horas impide el envío de mensajes libres.
+  // El estado de pausa NO inhabilita el input.
   const isInputDisabled =
-    !selectedUser || sendingMessage || !canSendMessagesNow;
+    !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
 
-  // Debugging: Log the final state of flags
   console.log(
-    `Render: selectedUser: ${selectedUser?.id}, canSendMessagesNow: ${canSendMessagesNow}, isInputDisabled: ${isInputDisabled}`
+    `Render: selectedUser: ${
+      selectedUser?.id
+    }, isFreeFormMessageAllowedBy24HourRule: ${isFreeFormMessageAllowedBy24HourRule()}, isInputDisabled: ${isInputDisabled}`
   );
 
   if (loading) {
@@ -765,7 +770,21 @@ const ChatWindow = () => {
                       mx: 1,
                       color: "white",
                     },
+                    // MODIFIED: Conditional background for unread messages
+                    bgcolor: user.unreadCount > 0 ? "#e0f2f1" : "inherit",
+                    mx: 1,
+                    borderRadius: 2,
                     minHeight: 72,
+                    "&.Mui-selected, &.Mui-selected:hover": {
+                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
+                      color: "white",
+                    },
+                    "&:hover": {
+                      bgcolor:
+                        user.unreadCount > 0
+                          ? "#c8e6e3"
+                          : "rgba(0, 0, 0, 0.04)",
+                    },
                   }}
                 >
                   <ListItemAvatar>
@@ -784,16 +803,41 @@ const ChatWindow = () => {
                         <Typography
                           component="span"
                           variant="body1"
-                          sx={{ fontWeight: "600", color: "inherit" }}
+                          sx={{
+                            fontWeight: user.unreadCount > 0 ? "700" : "600", // Bold for unread
+                            color: "inherit",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 0.5,
+                          }}
                         >
                           {user.name}
+                          {user.isPaused && (
+                            <PauseCircleFilledIcon
+                              sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
+                            />
+                          )}
+                          {/* MODIFIED: Badge for unread count */}
+                          {user.unreadCount > 0 && (
+                            <Box
+                              sx={{
+                                bgcolor: "#25D366", // WhatsApp green
+                                color: "white",
+                                borderRadius: "12px", // Pill shape
+                                px: 1,
+                                py: 0.2,
+                                fontSize: "0.75rem",
+                                fontWeight: "bold",
+                                ml: 1,
+                                minWidth: "24px", // Ensure it's wide enough for single digit
+                                textAlign: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {user.unreadCount}
+                            </Box>
+                          )}
                         </Typography>
-                        {/* ADDED: Pause icon next to name if chat is paused */}
-                        {user.isPaused && (
-                          <PauseCircleFilledIcon
-                            sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
-                          />
-                        )}
                         {lastMsg && (
                           <Typography
                             component="span"
@@ -828,6 +872,8 @@ const ChatWindow = () => {
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
                               flexGrow: 1,
+                              fontWeight:
+                                user.unreadCount > 0 ? "600" : "normal", // Bold for unread
                             }}
                           >
                             {lastMsg.text}
@@ -872,12 +918,11 @@ const ChatWindow = () => {
             </Typography>
             {selectedUser &&
               getChannelIcon(conversations[selectedUser.id]?.canal)}
-            {/* MODIFIED: Conditional button for pause/play */}
             <IconButton
               onClick={
                 selectedUser?.isPaused ? handleUnpauseChat : handlePauseChat
               }
-              disabled={!selectedUser} // Disable if no user is selected
+              disabled={!selectedUser}
             >
               {selectedUser?.isPaused ? <PlayArrowIcon /> : <PauseIcon />}
             </IconButton>
@@ -927,18 +972,8 @@ const ChatWindow = () => {
               bgcolor: "#fff",
             }}
           >
-            {/* Leyenda de deshabilitado */}
-            {!canSendMessagesNow && selectedUser && (
-              <Typography
-                variant="caption"
-                color="error"
-                sx={{ mb: 1, textAlign: "center" }}
-              >
-                No se pueden enviar mensajes. El último mensaje del usuario
-                tiene más de 24 horas. Solo se puede compartir una plantilla.
-              </Typography>
-            )}
-            {!selectedUser?.isPaused && (
+            {/* Mensaje cuando la IA está activa (chat NO pausado) */}
+            {selectedUser && !selectedUser.isPaused && (
               <Typography
                 variant="caption"
                 color="warning.main"
@@ -949,6 +984,19 @@ const ChatWindow = () => {
                 superior para detener el bot.
               </Typography>
             )}
+
+            {/* Mensaje cuando la regla de las 24 horas aplica (independiente del estado de pausa) */}
+            {selectedUser && !isFreeFormMessageAllowedBy24HourRule() && (
+              <Typography
+                variant="caption"
+                color="error"
+                sx={{ mb: 1, textAlign: "center" }}
+              >
+                No se pueden enviar mensajes. El último mensaje del usuario
+                tiene más de 24 horas. Solo se puede compartir una plantilla.
+              </Typography>
+            )}
+
             <Box sx={{ display: "flex", width: "100%" }}>
               <TextField
                 fullWidth
@@ -957,13 +1005,13 @@ const ChatWindow = () => {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={isInputDisabled}
+                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
                 sx={{ borderRadius: 2 }}
               />
               <IconButton
                 onClick={handleSend}
                 size="small"
-                disabled={isInputDisabled}
+                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
                 style={{ marginLeft: "1rem" }}
               >
                 <SendIcon />
