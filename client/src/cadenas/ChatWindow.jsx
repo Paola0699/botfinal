@@ -18,7 +18,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
-import supabase from "../supabaseClient";
+import supabase from "../supabaseClient"; // Asegúrate de que esta ruta sea correcta
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
@@ -37,11 +37,7 @@ import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 
-const API_KEY = import.meta.env.VITE_API_KEY;
-const BASE_ID = import.meta.env.VITE_BASE_ID;
-const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
-
-console.log(API_KEY);
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME; // VITE_TABLE_NAME=chat_crm
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
@@ -107,93 +103,83 @@ const ChatWindow = () => {
   const [userProfiles, setUserProfiles] = useState({});
   const messagesEndRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sendingMessage, setSendingMessage] = useState(false);
   const [channelFilter, setChannelFilter] = useState("todos");
-  const [temperatureFilter, setTemperatureFilter] = useState([
-    "tibio",
-    "caliente",
-  ]);
+  const [temperatureFilter, setTemperatureFilter] = useState([]); // Corregido a []
   const [loading, setLoading] = useState(true);
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   useEffect(() => {
-    const fetchAirtableRecords = async () => {
+    const fetchSupabaseLeads = async () => {
+      console.log("--- fetchSupabaseLeads iniciando ---");
       try {
-        const response = await fetch(
-          `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}`,
-          {
-            headers: {
-              Authorization: `Bearer ${API_KEY}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (!response.ok) throw new Error("Error al obtener leads");
+        const { data, error } = await supabase
+          .from(TABLE_NAME) // 'chat_crm'
+          .select(
+            "session_id, nombre, username, telefono, profile_pic, temperatura, pause"
+          );
 
-        const data = await response.json();
+        if (error) {
+          console.error("Error al obtener leads de Supabase:", error.message);
+          throw new Error(
+            `Error al obtener leads de Supabase: ${error.message}`
+          );
+        }
+
+        console.log("Datos de chat_crm (leads) obtenidos:", data);
+
         const profiles = {};
-        data.records.forEach((record) => {
-          const senderId = record.fields["session_id"];
+        data.forEach((record) => {
+          const senderId = record.session_id;
           if (senderId) {
             profiles[senderId] = {
-              id_airtable: record.id,
-              name: record.fields["nombre"] || senderId,
-              email: record.fields["username"] || "Sin correo",
-              phone: record.fields["telefono"] || "Sin teléfono",
+              id_supabase: record.session_id,
+              name: record.nombre || senderId,
+              email: record.username || "Sin correo",
+              phone: record.telefono || "Sin teléfono",
               avatar:
-                record.fields["profile_pic"] ||
+                record.profile_pic ||
                 `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-              temperatura: normalizeTemperatureInternal(
-                record.fields["temperatura"]
-              ),
-              isPaused: record.fields["pause"] || false,
+              temperatura: normalizeTemperatureInternal(record.temperatura),
+              isPaused: record.pause || false,
             };
           }
         });
         setUserProfiles(profiles);
+        console.log("userProfiles generados:", profiles);
       } catch (error) {
-        console.error("Error al obtener leads:", error);
+        console.error("Error en fetchSupabaseLeads:", error);
       }
+      console.log("--- fetchSupabaseLeads finalizado ---");
     };
-    fetchAirtableRecords();
+    fetchSupabaseLeads();
   }, []);
 
   const handlePauseChat = async () => {
     if (!selectedUser) return;
 
     try {
-      const recordId = selectedUser.id_airtable;
+      const recordId = selectedUser.id_supabase;
 
       if (!recordId) {
         console.warn(
-          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede pausar.`
+          `No se encontró id_supabase (session_id) para el usuario seleccionado: ${selectedUser.id}. No se puede pausar.`
         );
         return;
       }
 
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fields: {
-              pause: true,
-            },
-          }),
-        }
-      );
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .update({ pause: true })
+        .eq("session_id", recordId);
 
-      if (!updateResponse.ok) {
+      if (error) {
         throw new Error(
-          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
+          `Error al actualizar registro en Supabase: ${error.message}`
         );
       }
 
       console.log(
-        "Atributo 'pause' actualizado a true en Airtable para el record:",
+        "Atributo 'pause' actualizado a true en Supabase para el record (session_id):",
         recordId
       );
 
@@ -214,8 +200,8 @@ const ChatWindow = () => {
         }
         return prevSelectedUser;
       });
-    } catch (airtableError) {
-      console.error("Error al interactuar con Airtable:", airtableError);
+    } catch (supabaseError) {
+      console.error("Error al interactuar con Supabase:", supabaseError);
     }
   };
 
@@ -223,39 +209,28 @@ const ChatWindow = () => {
     if (!selectedUser) return;
 
     try {
-      const recordId = selectedUser.id_airtable;
+      const recordId = selectedUser.id_supabase;
 
       if (!recordId) {
         console.warn(
-          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede despausar.`
+          `No se encontró id_supabase (session_id) para el usuario seleccionado: ${selectedUser.id}. No se puede despausar.`
         );
         return;
       }
 
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fields: {
-              pause: false, // Set pause to false
-            },
-          }),
-        }
-      );
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .update({ pause: false })
+        .eq("session_id", recordId);
 
-      if (!updateResponse.ok) {
+      if (error) {
         throw new Error(
-          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
+          `Error al actualizar registro en Supabase: ${error.message}`
         );
       }
 
       console.log(
-        "Atributo 'pause' actualizado a false en Airtable para el record:",
+        "Atributo 'pause' actualizado a false en Supabase para el record (session_id):",
         recordId
       );
 
@@ -276,22 +251,37 @@ const ChatWindow = () => {
         }
         return prevSelectedUser;
       });
-    } catch (airtableError) {
-      console.error("Error al interactuar con Airtable:", airtableError);
+    } catch (supabaseError) {
+      console.error("Error al interactuar con Supabase:", supabaseError);
     }
   };
 
   useEffect(() => {
+    // Este efecto se ejecuta cuando userProfiles se actualiza.
+    // Solo queremos obtener el chatlog si userProfiles ya tiene datos.
+    if (Object.keys(userProfiles).length === 0) {
+      console.log("userProfiles está vacío, saltando getChatLog por ahora.");
+      setLoading(true); // Mantener loading true hasta que userProfiles esté listo
+      return;
+    }
+
     const getChatLog = async () => {
-      // MODIFIED: Select 'id' and 'leido' explicitly
+      console.log("--- getChatLog iniciando ---");
+      console.log(
+        "Estado actual de userProfiles al iniciar getChatLog:",
+        userProfiles
+      );
+
       const { data, error } = await supabase
         .from("chatlog")
-        .select("id, *, leido");
+        .select("id, session_id, role, content, created_at, canal, leido");
       if (error) {
         console.error("Error fetching chat log:", error);
         setLoading(false);
         return;
       }
+
+      console.log("Datos de chatlog obtenidos:", data);
 
       const groupedBySession = data.reduce((acc, msg) => {
         const sessionId = msg.session_id;
@@ -301,7 +291,7 @@ const ChatWindow = () => {
         }
         const createdAt = new Date(msg.created_at);
         acc[sessionId].push({
-          id: msg.id, // ADDED: Include message id
+          id: msg.id,
           fromMe: msg.role === "assistant",
           text: msg.content,
           time: createdAt.toLocaleString("es-MX", {
@@ -316,6 +306,10 @@ const ChatWindow = () => {
         });
         return acc;
       }, {});
+      console.log(
+        "Mensajes agrupados por sesión (groupedBySession):",
+        groupedBySession
+      );
 
       Object.keys(groupedBySession).forEach((sessionId) => {
         groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
@@ -324,37 +318,41 @@ const ChatWindow = () => {
       const uniqueUsers = Object.keys(groupedBySession)
         .map((sessionId) => {
           const profile = userProfiles[sessionId];
+          if (!profile) {
+            console.warn(
+              `No se encontró perfil en chat_crm para session_id: ${sessionId}. Este usuario no se mostrará completamente.`
+            );
+            return null;
+          }
+
           const messagesForSession = groupedBySession[sessionId];
           const lastMessage = messagesForSession[messagesForSession.length - 1];
           const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
 
-          // MODIFIED: Calculate unreadCount
           let unreadCount = 0;
           messagesForSession.forEach((msg) => {
             if (msg.fromMe === false && msg.leido === false) {
-              // Message from the user AND unread
               unreadCount++;
             }
           });
 
           return {
             id: sessionId,
-            id_airtable: profile?.id_airtable,
-            name: profile?.name || sessionId,
-            email: profile?.email || "Sin correo",
-            phone: profile?.phone || "Sin teléfono",
-            avatar:
-              profile?.avatar ||
-              `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-            temperatura: normalizeTemperatureInternal(profile?.temperatura),
-            isPaused: profile?.isPaused || false,
+            id_supabase: profile.id_supabase,
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            avatar: profile.avatar,
+            temperatura: profile.temperatura,
+            isPaused: profile.isPaused,
             lastCreatedAt,
-            unreadCount: unreadCount, // MODIFIED: Use unreadCount
+            unreadCount: unreadCount,
           };
         })
+        .filter(Boolean)
         .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
 
-      setUsers(uniqueUsers.map(({ lastCreatedAt, ...rest }) => rest));
+      console.log("Usuarios únicos generados (uniqueUsers):", uniqueUsers);
 
       const cleanedConversations = {};
       Object.entries(groupedBySession).forEach(([sessionId, messages]) => {
@@ -362,7 +360,7 @@ const ChatWindow = () => {
         cleanedConversations[sessionId] = {
           canal,
           messages: messages.map((msg) => ({
-            id: msg.id, // Ensure 'id' is passed to conversation messages
+            id: msg.id,
             fromMe: msg.fromMe,
             text: msg.text,
             time: msg.time,
@@ -372,6 +370,12 @@ const ChatWindow = () => {
         };
       });
       setConversations(cleanedConversations);
+      console.log(
+        "Conversaciones limpiadas (cleanedConversations):",
+        cleanedConversations
+      );
+
+      setUsers(uniqueUsers.map(({ lastCreatedAt, ...rest }) => rest)); // Actualiza el estado 'users' aquí
 
       if (uniqueUsers.length > 0) {
         if (
@@ -379,6 +383,7 @@ const ChatWindow = () => {
           !uniqueUsers.some((u) => u.id === selectedUser.id)
         ) {
           setSelectedUser(uniqueUsers[0]);
+          console.log("Usuario seleccionado inicialmente:", uniqueUsers[0]);
         } else {
           const currentSelectedUserUpdated = uniqueUsers.find(
             (u) => u.id === selectedUser.id
@@ -389,22 +394,24 @@ const ChatWindow = () => {
               currentSelectedUserUpdated.unreadCount !==
                 selectedUser.unreadCount)
           ) {
-            // Check for unread status change too
             setSelectedUser(currentSelectedUserUpdated);
+            console.log(
+              "Usuario seleccionado actualizado:",
+              currentSelectedUserUpdated
+            );
           }
         }
       } else {
         setSelectedUser(null);
+        console.log("No hay usuarios únicos, selectedUser establecido a null.");
       }
       setLoading(false);
+      console.log("--- getChatLog finalizado ---");
     };
 
-    if (Object.keys(userProfiles).length > 0 || !loading) {
-      getChatLog();
-    }
-  }, [userProfiles, selectedUser, loading]);
+    getChatLog(); // Llama a getChatLog si userProfiles ya tiene datos
+  }, [userProfiles, selectedUser]); // Dependencias: userProfiles y selectedUser
 
-  // NEW: Effect to mark messages as read when a chat is selected
   useEffect(() => {
     const markMessagesAsRead = async () => {
       if (!selectedUser || !conversations[selectedUser.id]) {
@@ -416,7 +423,7 @@ const ChatWindow = () => {
       );
 
       if (messagesToMarkRead.length === 0) {
-        return; // No unread messages from this user
+        return;
       }
 
       const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
@@ -439,7 +446,6 @@ const ChatWindow = () => {
           `Marked ${messageIdsToUpdate.length} messages as read for user ${selectedUser.id}`
         );
 
-        // Update local state (conversations)
         setConversations((prevConversations) => {
           const newConvo = { ...prevConversations[selectedUser.id] };
           newConvo.messages = newConvo.messages.map((msg) =>
@@ -453,7 +459,6 @@ const ChatWindow = () => {
           };
         });
 
-        // Update local state (users) to clear unread count
         setUsers((prevUsers) =>
           prevUsers.map((user) =>
             user.id === selectedUser.id ? { ...user, unreadCount: 0 } : user
@@ -464,28 +469,22 @@ const ChatWindow = () => {
       }
     };
 
-    // Only run if a user is selected and has unread messages
-    // The condition `selectedUser.unreadCount > 0` ensures we only try to mark as read if there are actual unread messages
     if (selectedUser && selectedUser.unreadCount > 0) {
       markMessagesAsRead();
     }
-  }, [selectedUser, conversations]); // Re-run if selectedUser changes or new messages arrive in the current convo
+  }, [selectedUser, conversations]);
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
   const handleSend = async () => {
-    // La validación de newMessage.trim() se mantiene para evitar enviar mensajes vacíos
     if (!newMessage.trim() || !selectedUser) return;
 
-    // La capacidad de enviar mensajes NO está ligada al estado de pausa aquí,
-    // solo a la regla de las 24 horas (ver isInputDisabled)
     if (!isFreeFormMessageAllowedBy24HourRule()) {
       console.warn(
         "No se puede enviar el mensaje: el último mensaje del usuario tiene más de 24 horas."
       );
-      // Opcional: mostrar un toast o alerta al usuario si intenta enviar
       return;
     }
 
@@ -550,7 +549,7 @@ const ChatWindow = () => {
           const updatedUser = {
             ...selectedUser,
             lastCreatedAt: now,
-            unreadCount: 0, // MODIFIED: Clear unread count when agent sends a message
+            unreadCount: 0,
           };
           const otherUsers = prevUsers.filter((u) => u.id !== selectedUser.id);
           return [updatedUser, ...otherUsers].sort(
@@ -594,25 +593,44 @@ const ChatWindow = () => {
     scrollToBottom();
   }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]);
 
+  // AÑADIDO: Log del estado 'users' antes de filtrar
+  console.log("Current users state:", users);
+
   const filteredUsers = users.filter((user) => {
+    // Logs detallados para depuración del filtro
+    // console.log("Filtering user:", user.id, user.name);
+    // console.log("searchTerm:", searchTerm);
+    // console.log("channelFilter:", channelFilter);
+    // console.log("temperatureFilter:", temperatureFilter);
+
     const matchesName = user.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
+    // console.log("matchesName:", matchesName);
+
     const canal = conversations[user.id]?.canal || "desconocido";
+    // console.log("canal for user:", canal);
     const matchesChannel = channelFilter === "todos" || canal === channelFilter;
+    // console.log("matchesChannel:", matchesChannel);
 
     const userTemperatureInternal = user.temperatura;
+    // console.log("userTemperatureInternal:", userTemperatureInternal);
     const matchesTemperature =
       temperatureFilter.length === 0 ||
       temperatureFilter.includes(userTemperatureInternal);
+    // console.log("matchesTemperature:", matchesTemperature);
 
-    return matchesName && matchesChannel && matchesTemperature;
+    const result = matchesName && matchesChannel && matchesTemperature;
+    // console.log("Filter result for user:", user.id, result);
+    return result;
   });
+  console.log(
+    "Usuarios filtrados para renderizar (filteredUsers):",
+    filteredUsers
+  );
 
-  // Nueva función para verificar la regla de las 24 horas (independiente del estado de pausa)
   const isFreeFormMessageAllowedBy24HourRule = () => {
     if (!selectedUser || !conversations[selectedUser.id]) {
-      // Si no hay usuario seleccionado o datos de conversación, asumimos que se puede enviar
       return true;
     }
 
@@ -620,10 +638,9 @@ const ChatWindow = () => {
     const lastUserMsg = messages
       .slice()
       .reverse()
-      .find((msg) => !msg.fromMe); // Buscar el último mensaje del usuario
+      .find((msg) => !msg.fromMe);
 
     if (!lastUserMsg) {
-      // Si no hay mensajes del usuario, asumimos que se puede enviar libremente
       return true;
     }
 
@@ -643,9 +660,6 @@ const ChatWindow = () => {
     return timeDifference < twentyFourHoursInMs;
   };
 
-  // La entrada está deshabilitada solo si no hay usuario, se está enviando un mensaje,
-  // o si la regla de las 24 horas impide el envío de mensajes libres.
-  // El estado de pausa NO inhabilita el input.
   const isInputDisabled =
     !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
 
@@ -770,7 +784,6 @@ const ChatWindow = () => {
                       mx: 1,
                       color: "white",
                     },
-                    // MODIFIED: Conditional background for unread messages
                     bgcolor: user.unreadCount > 0 ? "#e0f2f1" : "inherit",
                     mx: 1,
                     borderRadius: 2,
@@ -804,7 +817,7 @@ const ChatWindow = () => {
                           component="span"
                           variant="body1"
                           sx={{
-                            fontWeight: user.unreadCount > 0 ? "700" : "600", // Bold for unread
+                            fontWeight: user.unreadCount > 0 ? "700" : "600",
                             color: "inherit",
                             display: "flex",
                             alignItems: "center",
@@ -817,19 +830,18 @@ const ChatWindow = () => {
                               sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
                             />
                           )}
-                          {/* MODIFIED: Badge for unread count */}
                           {user.unreadCount > 0 && (
                             <Box
                               sx={{
-                                bgcolor: "#25D366", // WhatsApp green
+                                bgcolor: "#25D366",
                                 color: "white",
-                                borderRadius: "12px", // Pill shape
+                                borderRadius: "12px",
                                 px: 1,
                                 py: 0.2,
                                 fontSize: "0.75rem",
                                 fontWeight: "bold",
                                 ml: 1,
-                                minWidth: "24px", // Ensure it's wide enough for single digit
+                                minWidth: "24px",
                                 textAlign: "center",
                                 flexShrink: 0,
                               }}
@@ -873,7 +885,7 @@ const ChatWindow = () => {
                               whiteSpace: "nowrap",
                               flexGrow: 1,
                               fontWeight:
-                                user.unreadCount > 0 ? "600" : "normal", // Bold for unread
+                                user.unreadCount > 0 ? "600" : "normal",
                             }}
                           >
                             {lastMsg.text}
@@ -1005,13 +1017,13 @@ const ChatWindow = () => {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
+                disabled={isInputDisabled}
                 sx={{ borderRadius: 2 }}
               />
               <IconButton
                 onClick={handleSend}
                 size="small"
-                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
+                disabled={isInputDisabled}
                 style={{ marginLeft: "1rem" }}
               >
                 <SendIcon />

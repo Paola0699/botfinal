@@ -13,12 +13,13 @@ import {
   Chip,
   InputAdornment,
   CircularProgress,
-  TablePagination, // Importar TablePagination
+  TablePagination,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 
 import { useState, useEffect } from "react";
+import supabase from "../supabaseClient"; // Importa tu cliente de Supabase
 
 // Importar iconos para la temperatura
 import AcUnitIcon from "@mui/icons-material/AcUnit"; // Frío (copo de nieve)
@@ -26,9 +27,10 @@ import WbSunnyIcon from "@mui/icons-material/WbSunny"; // Tibio (sol pequeño)
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment"; // Caliente (fuego)
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline"; // Desconocido
 
-const API_KEY = import.meta.env.VITE_API_KEY;
-const BASE_ID = import.meta.env.VITE_BASE_ID;
-const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
+// Eliminamos las variables de Airtable
+// const API_KEY = import.meta.env.VITE_API_KEY;
+// const BASE_ID = import.meta.env.VITE_BASE_ID;
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME; // VITE_TABLE_NAME=chat_crm
 
 // --- Lógica para el color dinámico del chip de Tipo de Cliente ---
 const getClientTypeColor = (clientType) => {
@@ -107,59 +109,39 @@ const ContactosView = () => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Función para obtener los registros de Airtable
-  const fetchAirtableRecords = async () => {
+  // Función para obtener los registros de Supabase
+  const fetchSupabaseRecords = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}`,
-        {
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      // Consulta a la tabla 'chat_crm' en Supabase
+      const { data, error: supabaseError } = await supabase
+        .from(TABLE_NAME) // Usa el nombre de tu tabla de contactos, que es 'chat_crm'
+        .select("*"); // Selecciona todas las columnas, o especifica las que necesites
 
-      if (!response.ok) {
-        const errorData = await response.json();
+      if (supabaseError) {
         throw new Error(
-          `Error ${response.status}: ${
-            errorData.error?.message || "Error desconocido al obtener leads."
-          }`
+          `Error ${supabaseError.code}: ${supabaseError.message}`
         );
       }
 
-      const data = await response.json();
-      const formattedContacts = data.records.map((record) => {
-        // Simulación de temperatura si no existe en Airtable para esta vista
-        // En un entorno real, `record.fields.temperatura` debería existir
-        const simulatedTemperature = [
-          "frio",
-          "tibio",
-          "caliente",
-          "desconocido",
-        ][Math.floor(Math.random() * 4)];
-
+      const formattedContacts = data.map((record) => {
         return {
-          id: record.id,
-          nombre: record.fields.nombre || record.fields.username || "",
-          apellido: record.fields.apellidos || "",
-          telefono: record.fields.telefono || "",
-          mail: record.fields.mail || "",
-          // Usar el valor real de Airtable, normalizado. Si no existe, usar 'desconocido'.
-          tipoCliente: record.fields.tipo_cliente || "desconocido", // Valor por defecto si no está presente
-          // Usar el valor real de Airtable para temperatura, normalizado.
-          // Si no existe, usar el simulado (o 'desconocido' si no quieres simular)
+          // Asumiendo que 'session_id' es el identificador único en chat_crm
+          id: record.session_id,
+          nombre: record.nombre || record.username || "",
+          apellido: record.apellidos || "", // Asumiendo que existe una columna 'apellidos'
+          telefono: record.telefono || "",
+          mail: record.mail || "", // Asumiendo que existe una columna 'mail'
+          tipoCliente: record.tipo_cliente || "desconocido", // Asumiendo 'tipo_cliente'
           temperatura: normalizeTemperatureInternal(
-            record.fields.temperatura || simulatedTemperature
+            record.temperatura || "desconocido" // Usar la temperatura de Supabase
           ),
         };
       });
       setContacts(formattedContacts);
     } catch (err) {
-      console.error("Error al obtener leads:", err);
+      console.error("Error al obtener contactos:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -168,8 +150,8 @@ const ContactosView = () => {
 
   // Cargar datos al montar el componente
   useEffect(() => {
-    fetchAirtableRecords();
-  }, []);
+    fetchSupabaseRecords();
+  }, []); // El array vacío asegura que se ejecuta solo una vez al montar
 
   // Filtrar contactos basado en el término de búsqueda
   const filteredContacts = contacts.filter((contact) =>
@@ -237,7 +219,7 @@ const ContactosView = () => {
           {error}
         </Typography>
         <Button
-          onClick={fetchAirtableRecords}
+          onClick={fetchSupabaseRecords} // Reintentar la carga
           variant="contained"
           color="error"
           sx={{ mt: 3 }}
@@ -343,7 +325,7 @@ const ContactosView = () => {
                     );
                     return (
                       <TableRow
-                        key={contact.id}
+                        key={contact.id} // Usamos contact.id (que es session_id) como key
                         sx={{
                           "&:last-child td, &:last-child th": { border: 0 },
                         }}

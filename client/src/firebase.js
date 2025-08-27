@@ -2,12 +2,12 @@ import { getAuth } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB_x8SH7Ly_b1Vs5x8ooTGmNDB9wClqLcM",
-  authDomain: "mejorabot.firebaseapp.com",
-  projectId: "mejorabot",
-  storageBucket: "mejorabot.firebasestorage.app",
-  messagingSenderId: "152371923466",
-  appId: "1:152371923466:web:fc356f4474e65465c9edf3",
+  apiKey: "AIzaSyC9mQbir4TJLUEiFiEPVMwmqHIESsRA9Ek",
+  authDomain: "pickupworld-1893d.firebaseapp.com",
+  projectId: "pickupworld-1893d",
+  storageBucket: "pickupworld-1893d.firebasestorage.app",
+  messagingSenderId: "811820342535",
+  appId: "1:811820342535:web:e7e810275093d1eaf1b9a2"
 };
 
 // Initialize Firebase
