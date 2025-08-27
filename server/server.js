@@ -61,7 +61,7 @@ console.log(recipientId)
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer EAALVZCVOXajwBPD0l7lQweezStIsZBLiznoEkO7mmYZCrzzMwOAkODaFClc7XXXGGBb4l0jcK3Jf8GlhZApiCRT15R30cC9ZApH0EIEfeYZC1vAIVZCCC2ZAqwWKq1KcXnwLvy4F7d1x5AQLGrZAQ0brZCvbiZCslTdiKXD5IZClsXYxRAufMubXMBO1EOrP6sGdlgZDZD`, // ⚠️ usa tu token desde .env
+          Authorization: `Bearer ${FB_BEARER_TOKEN}`,
         },
         body: JSON.stringify({
           messaging_product: "whatsapp",
