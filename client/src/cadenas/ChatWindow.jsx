@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import supabase from "../supabaseClient"; // Asegúrate de que esta ruta sea correcta
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
@@ -104,16 +104,324 @@ const ChatWindow = () => {
   const messagesEndRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [channelFilter, setChannelFilter] = useState("todos");
-  const [temperatureFilter, setTemperatureFilter] = useState([]); // Corregido a []
+  const [temperatureFilter, setTemperatureFilter] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
 
+  // --- FUNCIONES AUXILIARES PARA EL MANEJO DE ESTADO ---
+
+  // Función para actualizar la lista de usuarios (conversaciones)
+  const updateUsersList = useCallback((currentConversations, profiles) => {
+    const uniqueUsers = Object.keys(currentConversations)
+      .map((sessionId) => {
+        const profile = profiles[sessionId];
+        if (!profile) {
+          console.warn(
+            `No se encontró perfil en chat_crm para session_id: ${sessionId}. Este usuario podría no mostrarse completamente.`
+          );
+          return null;
+        }
+
+        const messagesForSession = currentConversations[sessionId].messages;
+        const lastMessage = messagesForSession[messagesForSession.length - 1];
+        const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
+
+        let unreadCount = 0;
+        messagesForSession.forEach((msg) => {
+          // Contar mensajes del usuario que NO están leídos
+          if (msg.fromMe === false && msg.leido === false) {
+            unreadCount++;
+          }
+        });
+
+        return {
+          id: sessionId,
+          id_supabase: profile.id_supabase,
+          name: profile.name,
+          email: profile.email,
+          phone: profile.phone,
+          avatar: profile.avatar,
+          temperatura: profile.temperatura,
+          isPaused: profile.isPaused,
+          lastCreatedAt,
+          unreadCount: unreadCount,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
+
+    setUsers(uniqueUsers);
+    setLoading(false);
+  }, []);
+
+  // Función para procesar los datos iniciales del chatlog
+  const processChatlogData = useCallback(
+    (data, profiles) => {
+      const groupedBySession = data.reduce((acc, msg) => {
+        const sessionId = msg.session_id;
+        if (!acc[sessionId]) {
+          acc[sessionId] = [];
+          acc[sessionId].canal = msg.canal;
+        }
+        const createdAt = new Date(msg.created_at);
+        acc[sessionId].push({
+          id: msg.id,
+          fromMe: msg.role === "assistant", // Determina si el mensaje es del asistente
+          text: msg.content,
+          time: createdAt.toLocaleString("es-MX", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          createdAt,
+          leido: msg.leido,
+        });
+        return acc;
+      }, {});
+
+      Object.keys(groupedBySession).forEach((sessionId) => {
+        groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
+      });
+
+      const cleanedConversations = {};
+      Object.entries(groupedBySession).forEach(([sessionId, messages]) => {
+        const canal = groupedBySession[sessionId].canal || "desconocido";
+        cleanedConversations[sessionId] = {
+          canal,
+          messages: messages.map((msg) => ({
+            id: msg.id,
+            fromMe: msg.fromMe,
+            text: msg.text,
+            time: msg.time,
+            createdAt: msg.createdAt,
+            leido: msg.leido,
+          })),
+        };
+      });
+      setConversations(cleanedConversations);
+      updateUsersList(cleanedConversations, profiles);
+    },
+    [updateUsersList]
+  );
+
+  // Manejador de cambios en tiempo real para la tabla chat_crm
+  const handleRealtimeCrmChange = useCallback((payload) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    if (newRecord && newRecord.session_id) {
+      const sessionId = newRecord.session_id;
+      const updatedProfile = {
+        id_supabase: newRecord.session_id,
+        name: newRecord.nombre || sessionId,
+        email: newRecord.username || "Sin correo",
+        phone: newRecord.telefono || "Sin teléfono",
+        avatar:
+          newRecord.profile_pic ||
+          `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
+        temperatura: normalizeTemperatureInternal(newRecord.temperatura),
+        isPaused: newRecord.pause || false,
+      };
+
+      setUserProfiles((prevProfiles) => ({
+        ...prevProfiles,
+        [sessionId]: updatedProfile,
+      }));
+
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === sessionId
+            ? {
+                ...user,
+                name: updatedProfile.name,
+                email: updatedProfile.email,
+                phone: updatedProfile.phone,
+                avatar: updatedProfile.avatar,
+                temperatura: updatedProfile.temperatura,
+                isPaused: updatedProfile.isPaused,
+              }
+            : user
+        )
+      );
+
+      setSelectedUser((prevSelectedUser) => {
+        if (prevSelectedUser && prevSelectedUser.id === sessionId) {
+          return {
+            ...prevSelectedUser,
+            name: updatedProfile.name,
+            email: updatedProfile.email,
+            phone: updatedProfile.phone,
+            avatar: updatedProfile.avatar,
+            temperatura: updatedProfile.temperatura,
+            isPaused: updatedProfile.isPaused,
+          };
+        }
+        return prevSelectedUser;
+      });
+    }
+  }, []);
+
+  // Manejador de cambios en tiempo real para la tabla chatlog
+  const handleRealtimeChatlogChange = useCallback(
+    (payload) => {
+      const { eventType, new: newRecord, old: oldRecord } = payload;
+
+      if (eventType === "INSERT") {
+        const sessionId = newRecord.session_id;
+        const createdAt = new Date(newRecord.created_at);
+        const newMessage = {
+          id: newRecord.id,
+          fromMe: newRecord.role === "assistant",
+          text: newRecord.content,
+          time: createdAt.toLocaleString("es-MX", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          createdAt,
+          leido: newRecord.leido,
+        };
+
+        console.log(
+          `[RT-INSERT] Nuevo mensaje para sesión ${
+            newRecord.session_id
+          }. Rol: ${newRecord.role}, Contenido: ${newRecord.content.substring(
+            0,
+            30
+          )}...`
+        );
+
+        setConversations((prevConversations) => {
+          const updatedConversations = { ...prevConversations };
+          if (!updatedConversations[sessionId]) {
+            updatedConversations[sessionId] = {
+              canal: newRecord.canal || "desconocido",
+              messages: [],
+            };
+          }
+          updatedConversations[sessionId].messages = [
+            ...updatedConversations[sessionId].messages,
+            newMessage,
+          ];
+          return updatedConversations;
+        });
+
+        setUsers((prevUsers) => {
+          let userFound = false;
+          const updatedUsers = prevUsers.map((user) => {
+            if (user.id === sessionId) {
+              userFound = true;
+              let unreadCount = user.unreadCount;
+              // Incrementar no leídos solo si el mensaje es del usuario y NO es el chat actualmente seleccionado
+              if (!newMessage.fromMe && sessionId !== selectedUser?.id) {
+                unreadCount++;
+              }
+              return {
+                ...user,
+                lastCreatedAt: createdAt,
+                unreadCount: unreadCount,
+              };
+            }
+            return user;
+          });
+
+          if (!userFound && userProfiles[sessionId]) {
+            const profile = userProfiles[sessionId];
+            // Si el mensaje es del usuario y el chat NO está seleccionado, el unreadCount inicial es 1
+            const unreadCount =
+              !newMessage.fromMe && sessionId !== selectedUser?.id ? 1 : 0;
+            const newUser = {
+              id: sessionId,
+              id_supabase: profile.id_supabase,
+              name: profile.name,
+              email: profile.email,
+              phone: profile.phone,
+              avatar: profile.avatar,
+              temperatura: profile.temperatura,
+              isPaused: profile.isPaused,
+              lastCreatedAt: createdAt,
+              unreadCount: unreadCount,
+            };
+            return [newUser, ...updatedUsers].sort(
+              (a, b) => b.lastCreatedAt - a.lastCreatedAt
+            );
+          }
+          return updatedUsers.sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
+        });
+      } else if (eventType === "UPDATE") {
+        const sessionId = newRecord.session_id;
+        const messageId = newRecord.id;
+
+        console.log(
+          `[RT-UPDATE] Mensaje ID ${messageId} para sesión ${sessionId}. Leído anterior: ${oldRecord.leido}, Nuevo leído: ${newRecord.leido}`
+        );
+
+        // Actualizar el estado de conversations primero y capturar el array de mensajes actualizado
+        let currentSessionMessagesAfterUpdate = [];
+        setConversations((prevConversations) => {
+          const updatedConversations = { ...prevConversations };
+          if (updatedConversations[sessionId]) {
+            updatedConversations[sessionId].messages = updatedConversations[
+              sessionId
+            ].messages.map((msg) => {
+              const updatedMsg =
+                msg.id === messageId ? { ...msg, leido: newRecord.leido } : msg;
+              return updatedMsg;
+            });
+            // Capturar la referencia al array de mensajes actualizado dentro de esta sesión
+            currentSessionMessagesAfterUpdate =
+              updatedConversations[sessionId].messages;
+          } else {
+            console.warn(
+              `[RT-UPDATE] Sesión ${sessionId} no encontrada en el estado de conversaciones. No se puede actualizar el mensaje.`
+            );
+          }
+          return updatedConversations;
+        });
+
+        // Ahora, usar el array de mensajes capturado para recalcular el conteo de no leídos
+        // Esto asegura que estamos contando basándonos en el estado *después* de que la bandera 'leido' del mensaje actual haya sido aplicada.
+        let newUnreadCountForSession = 0;
+        currentSessionMessagesAfterUpdate.forEach((msg) => {
+          // Contar mensajes del usuario que NO están leídos
+          if (!msg.fromMe && !msg.leido) {
+            newUnreadCountForSession++;
+          }
+        });
+
+        console.log(
+          `[RT-UPDATE] Recalculado el conteo de no leídos para la sesión ${sessionId}: ${newUnreadCountForSession}`
+        );
+
+        // Actualizar el estado 'users' con el conteo de no leídos correcto
+        setUsers((prevUsers) => {
+          const updatedUsers = prevUsers.map((user) =>
+            user.id === sessionId
+              ? { ...user, unreadCount: newUnreadCountForSession }
+              : user
+          );
+          console.log(
+            `[RT-UPDATE] Estado de usuarios actualizado para la sesión ${sessionId}. Nuevo unreadCount: ${newUnreadCountForSession}`
+          );
+          return updatedUsers;
+        });
+      }
+    },
+    [selectedUser, userProfiles]
+  );
+
+  // --- EFECTOS DE CARGA Y SUSCRIPCIÓN ---
+
+  // Efecto para cargar y suscribirse a los perfiles de usuario (chat_crm)
   useEffect(() => {
-    const fetchSupabaseLeads = async () => {
-      console.log("--- fetchSupabaseLeads iniciando ---");
+    const fetchAndSubscribeToUserProfiles = async () => {
+      console.log("--- fetchAndSubscribeToUserProfiles iniciando ---");
       try {
         const { data, error } = await supabase
-          .from(TABLE_NAME) // 'chat_crm'
+          .from(TABLE_NAME)
           .select(
             "session_id, nombre, username, telefono, profile_pic, temperatura, pause"
           );
@@ -126,7 +434,6 @@ const ChatWindow = () => {
         }
 
         console.log("Datos de chat_crm (leads) obtenidos:", data);
-
         const profiles = {};
         data.forEach((record) => {
           const senderId = record.session_id;
@@ -146,13 +453,107 @@ const ChatWindow = () => {
         });
         setUserProfiles(profiles);
         console.log("userProfiles generados:", profiles);
+
+        const crmChannel = supabase
+          .channel("crm_profile_changes")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: TABLE_NAME },
+            (payload) => {
+              console.log("Cambio en chat_crm (real-time):", payload);
+              handleRealtimeCrmChange(payload);
+            }
+          )
+          .subscribe();
+
+        console.log("--- fetchAndSubscribeToUserProfiles finalizado ---");
+
+        return () => {
+          console.log("Desuscribiendo del canal de crm...");
+          supabase.removeChannel(crmChannel);
+        };
       } catch (error) {
-        console.error("Error en fetchSupabaseLeads:", error);
+        console.error("Error en fetchAndSubscribeToUserProfiles:", error);
       }
-      console.log("--- fetchSupabaseLeads finalizado ---");
     };
-    fetchSupabaseLeads();
-  }, []);
+    fetchAndSubscribeToUserProfiles();
+  }, [handleRealtimeCrmChange]);
+
+  // Efecto para cargar y suscribirse al chatlog (depende de userProfiles)
+  useEffect(() => {
+    if (Object.keys(userProfiles).length === 0) {
+      console.log("userProfiles está vacío, esperando para cargar chatlog.");
+      setLoading(true);
+      return;
+    }
+
+    setLoading(true);
+
+    const setupRealtimeChatlog = async () => {
+      console.log("--- setupRealtimeChatlog iniciando ---");
+
+      const { data, error } = await supabase
+        .from("chatlog")
+        .select("id, session_id, role, content, created_at, canal, leido");
+      if (error) {
+        console.error("Error fetching initial chat log:", error);
+        setLoading(false);
+        return;
+      }
+
+      console.log("Datos de chatlog iniciales obtenidos:", data);
+      processChatlogData(data, userProfiles);
+
+      const chatlogChannel = supabase
+        .channel("chat_log_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "chatlog" },
+          (payload) => {
+            console.log("Cambio en chatlog (real-time):", payload);
+            handleRealtimeChatlogChange(payload);
+          }
+        )
+        .subscribe();
+
+      console.log("--- setupRealtimeChatlog finalizado ---");
+
+      return () => {
+        console.log("Desuscribiendo del canal de chatlog...");
+        supabase.removeChannel(chatlogChannel);
+      };
+    };
+
+    setupRealtimeChatlog();
+  }, [userProfiles, processChatlogData, handleRealtimeChatlogChange]);
+
+  // Efecto para seleccionar el primer usuario o mantener el seleccionado
+  useEffect(() => {
+    if (!loading && users.length > 0) {
+      if (!selectedUser || !users.some((u) => u.id === selectedUser.id)) {
+        setSelectedUser(users[0]);
+        console.log("Usuario seleccionado inicialmente:", users[0]);
+      } else {
+        const currentSelectedUserUpdated = users.find(
+          (u) => u.id === selectedUser.id
+        );
+        if (
+          currentSelectedUserUpdated &&
+          (currentSelectedUserUpdated.isPaused !== selectedUser.isPaused ||
+            currentSelectedUserUpdated.unreadCount !== selectedUser.unreadCount)
+        ) {
+          setSelectedUser(currentSelectedUserUpdated);
+          console.log(
+            "Usuario seleccionado actualizado:",
+            currentSelectedUserUpdated
+          );
+        }
+      }
+    } else if (!loading && users.length === 0) {
+      setSelectedUser(null);
+      console.log("No hay usuarios, selectedUser establecido a null.");
+    }
+  }, [loading, users, selectedUser]);
 
   const handlePauseChat = async () => {
     if (!selectedUser) return;
@@ -182,24 +583,6 @@ const ChatWindow = () => {
         "Atributo 'pause' actualizado a true en Supabase para el record (session_id):",
         recordId
       );
-
-      setUserProfiles((prevProfiles) => ({
-        ...prevProfiles,
-        [selectedUser.id]: {
-          ...prevProfiles[selectedUser.id],
-          isPaused: true,
-        },
-      }));
-
-      setSelectedUser((prevSelectedUser) => {
-        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
-          return {
-            ...prevSelectedUser,
-            isPaused: true,
-          };
-        }
-        return prevSelectedUser;
-      });
     } catch (supabaseError) {
       console.error("Error al interactuar con Supabase:", supabaseError);
     }
@@ -233,193 +616,26 @@ const ChatWindow = () => {
         "Atributo 'pause' actualizado a false en Supabase para el record (session_id):",
         recordId
       );
-
-      setUserProfiles((prevProfiles) => ({
-        ...prevProfiles,
-        [selectedUser.id]: {
-          ...prevProfiles[selectedUser.id],
-          isPaused: false,
-        },
-      }));
-
-      setSelectedUser((prevSelectedUser) => {
-        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
-          return {
-            ...prevSelectedUser,
-            isPaused: false,
-          };
-        }
-        return prevSelectedUser;
-      });
     } catch (supabaseError) {
       console.error("Error al interactuar con Supabase:", supabaseError);
     }
   };
 
   useEffect(() => {
-    // Este efecto se ejecuta cuando userProfiles se actualiza.
-    // Solo queremos obtener el chatlog si userProfiles ya tiene datos.
-    if (Object.keys(userProfiles).length === 0) {
-      console.log("userProfiles está vacío, saltando getChatLog por ahora.");
-      setLoading(true); // Mantener loading true hasta que userProfiles esté listo
-      return;
-    }
-
-    const getChatLog = async () => {
-      console.log("--- getChatLog iniciando ---");
-      console.log(
-        "Estado actual de userProfiles al iniciar getChatLog:",
-        userProfiles
-      );
-
-      const { data, error } = await supabase
-        .from("chatlog")
-        .select("id, session_id, role, content, created_at, canal, leido");
-      if (error) {
-        console.error("Error fetching chat log:", error);
-        setLoading(false);
-        return;
-      }
-
-      console.log("Datos de chatlog obtenidos:", data);
-
-      const groupedBySession = data.reduce((acc, msg) => {
-        const sessionId = msg.session_id;
-        if (!acc[sessionId]) {
-          acc[sessionId] = [];
-          acc[sessionId].canal = msg.canal;
-        }
-        const createdAt = new Date(msg.created_at);
-        acc[sessionId].push({
-          id: msg.id,
-          fromMe: msg.role === "assistant",
-          text: msg.content,
-          time: createdAt.toLocaleString("es-MX", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          createdAt,
-          leido: msg.leido,
-        });
-        return acc;
-      }, {});
-      console.log(
-        "Mensajes agrupados por sesión (groupedBySession):",
-        groupedBySession
-      );
-
-      Object.keys(groupedBySession).forEach((sessionId) => {
-        groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
-      });
-
-      const uniqueUsers = Object.keys(groupedBySession)
-        .map((sessionId) => {
-          const profile = userProfiles[sessionId];
-          if (!profile) {
-            console.warn(
-              `No se encontró perfil en chat_crm para session_id: ${sessionId}. Este usuario no se mostrará completamente.`
-            );
-            return null;
-          }
-
-          const messagesForSession = groupedBySession[sessionId];
-          const lastMessage = messagesForSession[messagesForSession.length - 1];
-          const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
-
-          let unreadCount = 0;
-          messagesForSession.forEach((msg) => {
-            if (msg.fromMe === false && msg.leido === false) {
-              unreadCount++;
-            }
-          });
-
-          return {
-            id: sessionId,
-            id_supabase: profile.id_supabase,
-            name: profile.name,
-            email: profile.email,
-            phone: profile.phone,
-            avatar: profile.avatar,
-            temperatura: profile.temperatura,
-            isPaused: profile.isPaused,
-            lastCreatedAt,
-            unreadCount: unreadCount,
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
-
-      console.log("Usuarios únicos generados (uniqueUsers):", uniqueUsers);
-
-      const cleanedConversations = {};
-      Object.entries(groupedBySession).forEach(([sessionId, messages]) => {
-        const canal = groupedBySession[sessionId].canal || "desconocido";
-        cleanedConversations[sessionId] = {
-          canal,
-          messages: messages.map((msg) => ({
-            id: msg.id,
-            fromMe: msg.fromMe,
-            text: msg.text,
-            time: msg.time,
-            createdAt: msg.createdAt,
-            leido: msg.leido,
-          })),
-        };
-      });
-      setConversations(cleanedConversations);
-      console.log(
-        "Conversaciones limpiadas (cleanedConversations):",
-        cleanedConversations
-      );
-
-      setUsers(uniqueUsers.map(({ lastCreatedAt, ...rest }) => rest)); // Actualiza el estado 'users' aquí
-
-      if (uniqueUsers.length > 0) {
-        if (
-          !selectedUser ||
-          !uniqueUsers.some((u) => u.id === selectedUser.id)
-        ) {
-          setSelectedUser(uniqueUsers[0]);
-          console.log("Usuario seleccionado inicialmente:", uniqueUsers[0]);
-        } else {
-          const currentSelectedUserUpdated = uniqueUsers.find(
-            (u) => u.id === selectedUser.id
-          );
-          if (
-            currentSelectedUserUpdated &&
-            (currentSelectedUserUpdated.isPaused !== selectedUser.isPaused ||
-              currentSelectedUserUpdated.unreadCount !==
-                selectedUser.unreadCount)
-          ) {
-            setSelectedUser(currentSelectedUserUpdated);
-            console.log(
-              "Usuario seleccionado actualizado:",
-              currentSelectedUserUpdated
-            );
-          }
-        }
-      } else {
-        setSelectedUser(null);
-        console.log("No hay usuarios únicos, selectedUser establecido a null.");
-      }
-      setLoading(false);
-      console.log("--- getChatLog finalizado ---");
-    };
-
-    getChatLog(); // Llama a getChatLog si userProfiles ya tiene datos
-  }, [userProfiles, selectedUser]); // Dependencias: userProfiles y selectedUser
-
-  useEffect(() => {
     const markMessagesAsRead = async () => {
       if (!selectedUser || !conversations[selectedUser.id]) {
+        console.log(
+          "[markMessagesAsRead] No selected user or conversations for selected user."
+        );
         return;
       }
 
       const messagesToMarkRead = conversations[selectedUser.id].messages.filter(
         (msg) => !msg.fromMe && msg.leido === false
+      );
+
+      console.log(
+        `[markMessagesAsRead] Encontrados ${messagesToMarkRead.length} mensajes para marcar como leídos para la sesión ${selectedUser.id}`
       );
 
       if (messagesToMarkRead.length === 0) {
@@ -430,6 +646,11 @@ const ChatWindow = () => {
       if (messageIdsToUpdate.length === 0) return;
 
       try {
+        console.log(
+          `[markMessagesAsRead] Actualizando mensajes con IDs: ${messageIdsToUpdate.join(
+            ", "
+          )} a leido: true`
+        );
         const { error: updateError } = await supabase
           .from("chatlog")
           .update({ leido: true })
@@ -437,40 +658,31 @@ const ChatWindow = () => {
 
         if (updateError) {
           console.error(
-            "Error marking messages as read in Supabase:",
+            "[markMessagesAsRead] Error al marcar mensajes como leídos en Supabase:",
             updateError
           );
           return;
         }
         console.log(
-          `Marked ${messageIdsToUpdate.length} messages as read for user ${selectedUser.id}`
-        );
-
-        setConversations((prevConversations) => {
-          const newConvo = { ...prevConversations[selectedUser.id] };
-          newConvo.messages = newConvo.messages.map((msg) =>
-            msg.fromMe === false && msg.leido === false
-              ? { ...msg, leido: true }
-              : msg
-          );
-          return {
-            ...prevConversations,
-            [selectedUser.id]: newConvo,
-          };
-        });
-
-        setUsers((prevUsers) =>
-          prevUsers.map((user) =>
-            user.id === selectedUser.id ? { ...user, unreadCount: 0 } : user
-          )
+          `[markMessagesAsRead] Envío exitoso de actualización a Supabase para ${messageIdsToUpdate.length} mensajes para el usuario ${selectedUser.id}`
         );
       } catch (error) {
-        console.error("Error in markMessagesAsRead:", error);
+        console.error(
+          "[markMessagesAsRead] Error en markMessagesAsRead:",
+          error
+        );
       }
     };
 
     if (selectedUser && selectedUser.unreadCount > 0) {
+      console.log(
+        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount > 0 (${selectedUser.unreadCount}). Llamando a markMessagesAsRead.`
+      );
       markMessagesAsRead();
+    } else if (selectedUser) {
+      console.log(
+        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount de 0. No se necesita acción.`
+      );
     }
   }, [selectedUser, conversations]);
 
@@ -489,31 +701,28 @@ const ChatWindow = () => {
     }
 
     const now = new Date();
-    const formattedTime = now.toLocaleString("es-MX", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
 
     const messageToSend = {
       fromMe: true,
       text: newMessage,
-      time: formattedTime,
+      time: now.toLocaleString("es-MX", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
       createdAt: now,
     };
 
-    setConversations((prevConversations) => ({
-      ...prevConversations,
-      [selectedUser.id]: {
-        ...prevConversations[selectedUser.id],
-        messages: [
-          ...(prevConversations[selectedUser.id]?.messages || []),
-          messageToSend,
-        ],
-      },
-    }));
+    setConversations((prevConversations) => {
+      const updatedConvo = { ...prevConversations[selectedUser.id] };
+      updatedConvo.messages = [...(updatedConvo.messages || []), messageToSend];
+      return {
+        ...prevConversations,
+        [selectedUser.id]: updatedConvo,
+      };
+    });
     setNewMessage("");
     setSendingMessage(true);
 
@@ -541,34 +750,36 @@ const ChatWindow = () => {
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
+          setConversations((prevConversations) => {
+            const updatedConvo = { ...prevConversations[selectedUser.id] };
+            updatedConvo.messages = updatedConvo.messages.filter(
+              (msg) => msg !== messageToSend
+            );
+            return {
+              ...prevConversations,
+              [selectedUser.id]: updatedConvo,
+            };
+          });
+          setNewMessage(messageToSend.text);
         } else {
           console.log("Mensaje guardado en Supabase:", data);
         }
-
-        setUsers((prevUsers) => {
-          const updatedUser = {
-            ...selectedUser,
-            lastCreatedAt: now,
-            unreadCount: 0,
-          };
-          const otherUsers = prevUsers.filter((u) => u.id !== selectedUser.id);
-          return [updatedUser, ...otherUsers].sort(
-            (a, b) => b.lastCreatedAt - a.lastCreatedAt
-          );
-        });
       } else {
         console.error(
           "Error al enviar mensaje a la API. Revirtiendo UI.",
           res.status,
           await res.text()
         );
-        setConversations((prevConversations) => ({
-          ...prevConversations,
-          [selectedUser.id]: {
-            ...prevConversations[selectedUser.id],
-            messages: prevConversations[selectedUser.id].messages.slice(0, -1),
-          },
-        }));
+        setConversations((prevConversations) => {
+          const updatedConvo = { ...prevConversations[selectedUser.id] };
+          updatedConvo.messages = updatedConvo.messages.filter(
+            (msg) => msg !== messageToSend
+          );
+          return {
+            ...prevConversations,
+            [selectedUser.id]: updatedConvo,
+          };
+        });
         setNewMessage(messageToSend.text);
       }
     } catch (err) {
@@ -593,36 +804,22 @@ const ChatWindow = () => {
     scrollToBottom();
   }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]);
 
-  // AÑADIDO: Log del estado 'users' antes de filtrar
   console.log("Current users state:", users);
 
   const filteredUsers = users.filter((user) => {
-    // Logs detallados para depuración del filtro
-    // console.log("Filtering user:", user.id, user.name);
-    // console.log("searchTerm:", searchTerm);
-    // console.log("channelFilter:", channelFilter);
-    // console.log("temperatureFilter:", temperatureFilter);
-
     const matchesName = user.name
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
-    // console.log("matchesName:", matchesName);
 
     const canal = conversations[user.id]?.canal || "desconocido";
-    // console.log("canal for user:", canal);
     const matchesChannel = channelFilter === "todos" || canal === channelFilter;
-    // console.log("matchesChannel:", matchesChannel);
 
     const userTemperatureInternal = user.temperatura;
-    // console.log("userTemperatureInternal:", userTemperatureInternal);
     const matchesTemperature =
       temperatureFilter.length === 0 ||
       temperatureFilter.includes(userTemperatureInternal);
-    // console.log("matchesTemperature:", matchesTemperature);
 
-    const result = matchesName && matchesChannel && matchesTemperature;
-    // console.log("Filter result for user:", user.id, result);
-    return result;
+    return matchesName && matchesChannel && matchesTemperature;
   });
   console.log(
     "Usuarios filtrados para renderizar (filteredUsers):",
