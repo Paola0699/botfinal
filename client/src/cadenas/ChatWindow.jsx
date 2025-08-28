@@ -7,7 +7,6 @@ import {
   IconButton,
   InputLabel,
   List,
-  ListItem,
   ListItemAvatar,
   ListItemText,
   MenuItem,
@@ -16,13 +15,10 @@ import {
   Stack,
   TextField,
   Typography,
+  ListItemButton, // <-- Asegúrate de importar ListItemButton
 } from "@mui/material";
 import { useEffect, useRef, useState, useCallback } from "react";
-import supabase from "../supabaseClient"; // Asegúrate de que esta ruta sea correcta
-import SendIcon from "@mui/icons-material/Send";
-import PauseIcon from "@mui/icons-material/Pause";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
+import supabase from "../supabaseClient";
 
 // Importar iconos para los canales
 import InstagramIcon from "@mui/icons-material/Instagram";
@@ -36,8 +32,12 @@ import AcUnitIcon from "@mui/icons-material/AcUnit";
 import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import SendIcon from "@mui/icons-material/Send";
+import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
 
-const TABLE_NAME = import.meta.env.VITE_TABLE_NAME; // VITE_TABLE_NAME=chat_crm
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
@@ -49,7 +49,6 @@ const TEMPERATURE_DISPLAY_MAP = {
 
 const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
 
-// Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
 const normalizeTemperatureInternal = (temp) => {
   if (!temp) return "desconocido";
   const lowerTemp = String(temp)
@@ -62,7 +61,6 @@ const normalizeTemperatureInternal = (temp) => {
   return "desconocido";
 };
 
-// Funciones para obtener iconos de canal (MOVIDAS FUERA DEL COMPONENTE)
 const getChannelIcon = (channel, size = 16) => {
   switch (channel?.toLowerCase()) {
     case "instagram":
@@ -79,7 +77,6 @@ const getChannelIcon = (channel, size = 16) => {
   }
 };
 
-// Funciones para obtener iconos de temperatura (MOVIDAS FUERA DEL COMPONENTE)
 const getTemperatureIcon = (temperatureInternal, size = 16) => {
   switch (temperatureInternal) {
     case "frio":
@@ -100,7 +97,7 @@ const ChatWindow = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [conversations, setConversations] = useState({});
   const [newMessage, setNewMessage] = useState("");
-  const [userProfiles, setUserProfiles] = useState({});
+  const [userProfiles, setUserProfiles] = useState({}); // Mantener este estado para el componente
   const messagesEndRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [channelFilter, setChannelFilter] = useState("todos");
@@ -108,9 +105,31 @@ const ChatWindow = () => {
   const [loading, setLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
 
+  // Refs para acceso estable al estado más reciente dentro de los callbacks
+  const conversationsRef = useRef(conversations);
+  const usersRef = useRef(users);
+  const selectedUserRef = useRef(selectedUser);
+  const userProfilesRef = useRef(userProfiles); // Ref para el userProfiles más reciente
+
+  // Actualizar refs cada vez que el estado cambia
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
+
+  useEffect(() => {
+    userProfilesRef.current = userProfiles; // Actualizar la ref cuando userProfiles cambia
+  }, [userProfiles]);
+
   // --- FUNCIONES AUXILIARES PARA EL MANEJO DE ESTADO ---
 
-  // Función para actualizar la lista de usuarios (conversaciones)
   const updateUsersList = useCallback((currentConversations, profiles) => {
     const uniqueUsers = Object.keys(currentConversations)
       .map((sessionId) => {
@@ -128,7 +147,6 @@ const ChatWindow = () => {
 
         let unreadCount = 0;
         messagesForSession.forEach((msg) => {
-          // Contar mensajes del usuario que NO están leídos
           if (msg.fromMe === false && msg.leido === false) {
             unreadCount++;
           }
@@ -151,12 +169,12 @@ const ChatWindow = () => {
       .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
 
     setUsers(uniqueUsers);
-    setLoading(false);
+    // setLoading(false); // No establecer aquí, se hará en el efecto principal
   }, []);
 
-  // Función para procesar los datos iniciales del chatlog
+  // MODIFICADO: Aceptar 'profilesArg' como argumento
   const processChatlogData = useCallback(
-    (data, profiles) => {
+    (data, profilesArg) => {
       const groupedBySession = data.reduce((acc, msg) => {
         const sessionId = msg.session_id;
         if (!acc[sessionId]) {
@@ -166,7 +184,7 @@ const ChatWindow = () => {
         const createdAt = new Date(msg.created_at);
         acc[sessionId].push({
           id: msg.id,
-          fromMe: msg.role === "assistant", // Determina si el mensaje es del asistente
+          fromMe: msg.role === "assistant",
           text: msg.content,
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
@@ -201,12 +219,11 @@ const ChatWindow = () => {
         };
       });
       setConversations(cleanedConversations);
-      updateUsersList(cleanedConversations, profiles);
+      updateUsersList(cleanedConversations, profilesArg); // Usar profilesArg
     },
     [updateUsersList]
   );
 
-  // Manejador de cambios en tiempo real para la tabla chat_crm
   const handleRealtimeCrmChange = useCallback((payload) => {
     const { eventType, new: newRecord, old: oldRecord } = payload;
 
@@ -262,180 +279,183 @@ const ChatWindow = () => {
     }
   }, []);
 
-  // Manejador de cambios en tiempo real para la tabla chatlog
-  const handleRealtimeChatlogChange = useCallback(
-    (payload) => {
-      const { eventType, new: newRecord, old: oldRecord } = payload;
+  const handleRealtimeChatlogChange = useCallback((payload) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
 
-      if (eventType === "INSERT") {
-        const sessionId = newRecord.session_id;
-        const createdAt = new Date(newRecord.created_at);
-        const newMessage = {
-          id: newRecord.id,
-          fromMe: newRecord.role === "assistant",
-          text: newRecord.content,
-          time: createdAt.toLocaleString("es-MX", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          createdAt,
-          leido: newRecord.leido,
-        };
+    if (eventType === "INSERT") {
+      const sessionId = newRecord.session_id;
+      const createdAt = new Date(newRecord.created_at);
+      const newMessage = {
+        id: newRecord.id,
+        fromMe: newRecord.role === "assistant",
+        text: newRecord.content,
+        time: createdAt.toLocaleString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        createdAt,
+        leido: newRecord.leido,
+      };
 
-        console.log(
-          `[RT-INSERT] Nuevo mensaje para sesión ${
-            newRecord.session_id
-          }. Rol: ${newRecord.role}, Contenido: ${newRecord.content.substring(
-            0,
-            30
-          )}...`
+      console.log(
+        `[RT-INSERT] Nuevo mensaje para sesión ${newRecord.session_id}. Rol: ${
+          newRecord.role
+        }, Contenido: ${newRecord.content.substring(0, 30)}...`
+      );
+
+      setConversations((prevConversations) => {
+        const updatedConversations = { ...prevConversations };
+        if (!updatedConversations[sessionId]) {
+          updatedConversations[sessionId] = {
+            canal: newRecord.canal || "desconocido",
+            messages: [],
+          };
+        }
+        const existingMessages = updatedConversations[sessionId].messages;
+        const messageAlreadyExists = existingMessages.some(
+          (msg) => msg.id === newMessage.id
         );
 
-        setConversations((prevConversations) => {
-          const updatedConversations = { ...prevConversations };
-          if (!updatedConversations[sessionId]) {
-            updatedConversations[sessionId] = {
-              canal: newRecord.canal || "desconocido",
-              messages: [],
-            };
-          }
-          updatedConversations[sessionId].messages = [
-            ...updatedConversations[sessionId].messages,
-            newMessage,
-          ];
-          return updatedConversations;
-        });
+        if (messageAlreadyExists) {
+          console.warn(
+            `[RT-INSERT] Mensaje con ID ${newMessage.id} ya existe en la conversación ${sessionId}. Ignorando duplicado.`
+          );
+          return prevConversations;
+        }
 
-        setUsers((prevUsers) => {
-          let userFound = false;
-          const updatedUsers = prevUsers.map((user) => {
-            if (user.id === sessionId) {
-              userFound = true;
-              let unreadCount = user.unreadCount;
-              // Incrementar no leídos solo si el mensaje es del usuario y NO es el chat actualmente seleccionado
-              if (!newMessage.fromMe && sessionId !== selectedUser?.id) {
-                unreadCount++;
-              }
-              return {
-                ...user,
-                lastCreatedAt: createdAt,
-                unreadCount: unreadCount,
-              };
+        updatedConversations[sessionId].messages = [
+          ...existingMessages,
+          newMessage,
+        ];
+        return updatedConversations;
+      });
+
+      setUsers((prevUsers) => {
+        let userFound = false;
+        const updatedUsers = prevUsers.map((user) => {
+          if (user.id === sessionId) {
+            userFound = true;
+            let unreadCount = user.unreadCount;
+            if (
+              !newMessage.fromMe &&
+              sessionId !== selectedUserRef.current?.id
+            ) {
+              unreadCount++;
             }
-            return user;
-          });
-
-          if (!userFound && userProfiles[sessionId]) {
-            const profile = userProfiles[sessionId];
-            // Si el mensaje es del usuario y el chat NO está seleccionado, el unreadCount inicial es 1
-            const unreadCount =
-              !newMessage.fromMe && sessionId !== selectedUser?.id ? 1 : 0;
-            const newUser = {
-              id: sessionId,
-              id_supabase: profile.id_supabase,
-              name: profile.name,
-              email: profile.email,
-              phone: profile.phone,
-              avatar: profile.avatar,
-              temperatura: profile.temperatura,
-              isPaused: profile.isPaused,
+            return {
+              ...user,
               lastCreatedAt: createdAt,
               unreadCount: unreadCount,
             };
-            return [newUser, ...updatedUsers].sort(
-              (a, b) => b.lastCreatedAt - a.lastCreatedAt
-            );
           }
-          return updatedUsers.sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
-        });
-      } else if (eventType === "UPDATE") {
-        const sessionId = newRecord.session_id;
-        const messageId = newRecord.id;
-
-        console.log(
-          `[RT-UPDATE] Mensaje ID ${messageId} para sesión ${sessionId}. Leído anterior: ${oldRecord.leido}, Nuevo leído: ${newRecord.leido}`
-        );
-
-        // Actualizar el estado de conversations primero y capturar el array de mensajes actualizado
-        let currentSessionMessagesAfterUpdate = [];
-        setConversations((prevConversations) => {
-          const updatedConversations = { ...prevConversations };
-          if (updatedConversations[sessionId]) {
-            updatedConversations[sessionId].messages = updatedConversations[
-              sessionId
-            ].messages.map((msg) => {
-              const updatedMsg =
-                msg.id === messageId ? { ...msg, leido: newRecord.leido } : msg;
-              return updatedMsg;
-            });
-            // Capturar la referencia al array de mensajes actualizado dentro de esta sesión
-            currentSessionMessagesAfterUpdate =
-              updatedConversations[sessionId].messages;
-          } else {
-            console.warn(
-              `[RT-UPDATE] Sesión ${sessionId} no encontrada en el estado de conversaciones. No se puede actualizar el mensaje.`
-            );
-          }
-          return updatedConversations;
+          return user;
         });
 
-        // Ahora, usar el array de mensajes capturado para recalcular el conteo de no leídos
-        // Esto asegura que estamos contando basándonos en el estado *después* de que la bandera 'leido' del mensaje actual haya sido aplicada.
-        let newUnreadCountForSession = 0;
-        currentSessionMessagesAfterUpdate.forEach((msg) => {
-          // Contar mensajes del usuario que NO están leídos
-          if (!msg.fromMe && !msg.leido) {
-            newUnreadCountForSession++;
-          }
-        });
-
-        console.log(
-          `[RT-UPDATE] Recalculado el conteo de no leídos para la sesión ${sessionId}: ${newUnreadCountForSession}`
-        );
-
-        // Actualizar el estado 'users' con el conteo de no leídos correcto
-        setUsers((prevUsers) => {
-          const updatedUsers = prevUsers.map((user) =>
-            user.id === sessionId
-              ? { ...user, unreadCount: newUnreadCountForSession }
-              : user
+        if (!userFound && userProfilesRef.current[sessionId]) {
+          const profile = userProfilesRef.current[sessionId];
+          const unreadCount =
+            !newMessage.fromMe && sessionId !== selectedUserRef.current?.id
+              ? 1
+              : 0;
+          const newUser = {
+            id: sessionId,
+            id_supabase: profile.id_supabase,
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            avatar: profile.avatar,
+            temperatura: profile.temperatura,
+            isPaused: profile.isPaused,
+            lastCreatedAt: createdAt,
+            unreadCount: unreadCount,
+          };
+          return [newUser, ...updatedUsers].sort(
+            (a, b) => b.lastCreatedAt - a.lastCreatedAt
           );
-          console.log(
-            `[RT-UPDATE] Estado de usuarios actualizado para la sesión ${sessionId}. Nuevo unreadCount: ${newUnreadCountForSession}`
+        }
+        return updatedUsers.sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
+      });
+    } else if (eventType === "UPDATE") {
+      const sessionId = newRecord.session_id;
+      const messageId = newRecord.id;
+
+      console.log(
+        `[RT-UPDATE] Mensaje ID ${messageId} para sesión ${sessionId}. Leído anterior: ${oldRecord.leido}, Nuevo leído: ${newRecord.leido}`
+      );
+
+      let currentSessionMessagesAfterUpdate = [];
+      setConversations((prevConversations) => {
+        const updatedConversations = { ...prevConversations };
+        if (updatedConversations[sessionId]) {
+          updatedConversations[sessionId].messages = updatedConversations[
+            sessionId
+          ].messages.map((msg) => {
+            const updatedMsg =
+              msg.id === messageId ? { ...msg, leido: newRecord.leido } : msg;
+            return updatedMsg;
+          });
+          currentSessionMessagesAfterUpdate =
+            updatedConversations[sessionId].messages;
+        } else {
+          console.warn(
+            `[RT-UPDATE] Sesión ${sessionId} no encontrada en el estado de conversaciones. No se puede actualizar el mensaje.`
           );
-          return updatedUsers;
-        });
-      }
-    },
-    [selectedUser, userProfiles]
-  );
+        }
+        return updatedConversations;
+      });
 
-  // --- EFECTOS DE CARGA Y SUSCRIPCIÓN ---
+      let newUnreadCountForSession = 0;
+      currentSessionMessagesAfterUpdate.forEach((msg) => {
+        if (!msg.fromMe && !msg.leido) {
+          newUnreadCountForSession++;
+        }
+      });
 
-  // Efecto para cargar y suscribirse a los perfiles de usuario (chat_crm)
+      console.log(
+        `[RT-UPDATE] Recalculado el conteo de no leídos para la sesión ${sessionId}: ${newUnreadCountForSession}`
+      );
+
+      setUsers((prevUsers) => {
+        const updatedUsers = prevUsers.map((user) =>
+          user.id === sessionId
+            ? { ...user, unreadCount: newUnreadCountForSession }
+            : user
+        );
+        console.log(
+          `[RT-UPDATE] Estado de usuarios actualizado para la sesión ${sessionId}. Nuevo unreadCount: ${newUnreadCountForSession}`
+        );
+        return updatedUsers;
+      });
+    }
+  }, []);
+
+  const crmChannelRef = useRef(null);
+  const chatlogChannelRef = useRef(null);
+
+  // NUEVO EFECTO: Carga inicial de datos y suscripciones en tiempo real
   useEffect(() => {
-    const fetchAndSubscribeToUserProfiles = async () => {
-      console.log("--- fetchAndSubscribeToUserProfiles iniciando ---");
+    const setupInitialDataAndSubscriptions = async () => {
+      console.log("--- setupInitialDataAndSubscriptions iniciando ---");
+      setLoading(true); // Iniciar carga
+
       try {
-        const { data, error } = await supabase
+        // 1. Obtener perfiles de CRM
+        const { data: crmData, error: crmError } = await supabase
           .from(TABLE_NAME)
           .select(
             "session_id, nombre, username, telefono, profile_pic, temperatura, pause"
           );
 
-        if (error) {
-          console.error("Error al obtener leads de Supabase:", error.message);
+        if (crmError)
           throw new Error(
-            `Error al obtener leads de Supabase: ${error.message}`
+            `Error al obtener leads de Supabase: ${crmError.message}`
           );
-        }
 
-        console.log("Datos de chat_crm (leads) obtenidos:", data);
         const profiles = {};
-        data.forEach((record) => {
+        crmData.forEach((record) => {
           const senderId = record.session_id;
           if (senderId) {
             profiles[senderId] = {
@@ -451,83 +471,76 @@ const ChatWindow = () => {
             };
           }
         });
-        setUserProfiles(profiles);
-        console.log("userProfiles generados:", profiles);
+        setUserProfiles(profiles); // Actualizar el estado userProfiles
 
-        const crmChannel = supabase
-          .channel("crm_profile_changes")
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: TABLE_NAME },
-            (payload) => {
-              console.log("Cambio en chat_crm (real-time):", payload);
-              handleRealtimeCrmChange(payload);
-            }
-          )
-          .subscribe();
+        // 2. Obtener datos iniciales del chatlog
+        const { data: chatlogData, error: chatlogError } = await supabase
+          .from("chatlog")
+          .select("id, session_id, role, content, created_at, canal, leido");
 
-        console.log("--- fetchAndSubscribeToUserProfiles finalizado ---");
+        if (chatlogError)
+          throw new Error(
+            `Error fetching initial chat log: ${chatlogError.message}`
+          );
 
-        return () => {
-          console.log("Desuscribiendo del canal de crm...");
-          supabase.removeChannel(crmChannel);
-        };
+        // Procesar datos del chatlog usando los perfiles recién cargados
+        processChatlogData(chatlogData, profiles); // Pasar 'profiles' directamente
+
+        // 3. Suscribirse a los cambios en tiempo real de CRM (solo si no está ya suscrito)
+        if (!crmChannelRef.current) {
+          console.log("Suscribiendo al canal de crm...");
+          crmChannelRef.current = supabase
+            .channel("crm_profile_changes")
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: TABLE_NAME },
+              handleRealtimeCrmChange
+            )
+            .subscribe();
+        }
+
+        // 4. Suscribirse a los cambios en tiempo real del chatlog (solo si no está ya suscrito)
+        if (!chatlogChannelRef.current) {
+          console.log("Suscribiendo al canal de chatlog...");
+          chatlogChannelRef.current = supabase
+            .channel("chat_log_changes")
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "chatlog" },
+              handleRealtimeChatlogChange
+            )
+            .subscribe();
+        }
+
+        setLoading(false); // Finalizar carga
+        console.log("--- setupInitialDataAndSubscriptions finalizado ---");
       } catch (error) {
-        console.error("Error en fetchAndSubscribeToUserProfiles:", error);
-      }
-    };
-    fetchAndSubscribeToUserProfiles();
-  }, [handleRealtimeCrmChange]);
-
-  // Efecto para cargar y suscribirse al chatlog (depende de userProfiles)
-  useEffect(() => {
-    if (Object.keys(userProfiles).length === 0) {
-      console.log("userProfiles está vacío, esperando para cargar chatlog.");
-      setLoading(true);
-      return;
-    }
-
-    setLoading(true);
-
-    const setupRealtimeChatlog = async () => {
-      console.log("--- setupRealtimeChatlog iniciando ---");
-
-      const { data, error } = await supabase
-        .from("chatlog")
-        .select("id, session_id, role, content, created_at, canal, leido");
-      if (error) {
-        console.error("Error fetching initial chat log:", error);
+        console.error("Error en setupInitialDataAndSubscriptions:", error);
         setLoading(false);
-        return;
       }
-
-      console.log("Datos de chatlog iniciales obtenidos:", data);
-      processChatlogData(data, userProfiles);
-
-      const chatlogChannel = supabase
-        .channel("chat_log_changes")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "chatlog" },
-          (payload) => {
-            console.log("Cambio en chatlog (real-time):", payload);
-            handleRealtimeChatlogChange(payload);
-          }
-        )
-        .subscribe();
-
-      console.log("--- setupRealtimeChatlog finalizado ---");
-
-      return () => {
-        console.log("Desuscribiendo del canal de chatlog...");
-        supabase.removeChannel(chatlogChannel);
-      };
     };
 
-    setupRealtimeChatlog();
-  }, [userProfiles, processChatlogData, handleRealtimeChatlogChange]);
+    setupInitialDataAndSubscriptions();
 
-  // Efecto para seleccionar el primer usuario o mantener el seleccionado
+    // Función de limpieza para ambos canales
+    return () => {
+      console.log("Desuscribiendo todos los canales...");
+      if (crmChannelRef.current) {
+        supabase.removeChannel(crmChannelRef.current);
+        crmChannelRef.current = null;
+      }
+      if (chatlogChannelRef.current) {
+        supabase.removeChannel(chatlogChannelRef.current);
+        chatlogChannelRef.current = null;
+      }
+    };
+  }, [
+    processChatlogData,
+    handleRealtimeCrmChange,
+    handleRealtimeChatlogChange,
+  ]); // Dependencias: callbacks estables
+
+  // El useEffect para seleccionar el usuario inicial puede permanecer, ya que depende de 'users' y 'loading'
   useEffect(() => {
     if (!loading && users.length > 0) {
       if (!selectedUser || !users.some((u) => u.id === selectedUser.id)) {
@@ -621,59 +634,59 @@ const ChatWindow = () => {
     }
   };
 
-  useEffect(() => {
-    const markMessagesAsRead = async () => {
-      if (!selectedUser || !conversations[selectedUser.id]) {
-        console.log(
-          "[markMessagesAsRead] No selected user or conversations for selected user."
-        );
-        return;
-      }
+  const markMessagesAsRead = useCallback(async () => {
+    const currentSelectedUser = selectedUserRef.current;
+    const currentConversations = conversationsRef.current;
 
-      const messagesToMarkRead = conversations[selectedUser.id].messages.filter(
-        (msg) => !msg.fromMe && msg.leido === false
-      );
-
+    if (!currentSelectedUser || !currentConversations[currentSelectedUser.id]) {
       console.log(
-        `[markMessagesAsRead] Encontrados ${messagesToMarkRead.length} mensajes para marcar como leídos para la sesión ${selectedUser.id}`
+        "[markMessagesAsRead] No selected user or conversations for selected user."
       );
+      return;
+    }
 
-      if (messagesToMarkRead.length === 0) {
+    const messagesToMarkRead = currentConversations[
+      currentSelectedUser.id
+    ].messages.filter((msg) => !msg.fromMe && msg.leido === false);
+
+    console.log(
+      `[markMessagesAsRead] Encontrados ${messagesToMarkRead.length} mensajes para marcar como leídos para la sesión ${currentSelectedUser.id}`
+    );
+
+    if (messagesToMarkRead.length === 0) {
+      return;
+    }
+
+    const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
+    if (messageIdsToUpdate.length === 0) return;
+
+    try {
+      console.log(
+        `[markMessagesAsRead] Actualizando mensajes con IDs: ${messageIdsToUpdate.join(
+          ", "
+        )} a leido: true`
+      );
+      const { error: updateError } = await supabase
+        .from("chatlog")
+        .update({ leido: true })
+        .in("id", messageIdsToUpdate);
+
+      if (updateError) {
+        console.error(
+          "[markMessagesAsRead] Error al marcar mensajes como leídos en Supabase:",
+          updateError
+        );
         return;
       }
+      console.log(
+        `[markMessagesAsRead] Envío exitoso de actualización a Supabase para ${messageIdsToUpdate.length} mensajes para el usuario ${currentSelectedUser.id}`
+      );
+    } catch (error) {
+      console.error("[markMessagesAsRead] Error en markMessagesAsRead:", error);
+    }
+  }, []);
 
-      const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
-      if (messageIdsToUpdate.length === 0) return;
-
-      try {
-        console.log(
-          `[markMessagesAsRead] Actualizando mensajes con IDs: ${messageIdsToUpdate.join(
-            ", "
-          )} a leido: true`
-        );
-        const { error: updateError } = await supabase
-          .from("chatlog")
-          .update({ leido: true })
-          .in("id", messageIdsToUpdate);
-
-        if (updateError) {
-          console.error(
-            "[markMessagesAsRead] Error al marcar mensajes como leídos en Supabase:",
-            updateError
-          );
-          return;
-        }
-        console.log(
-          `[markMessagesAsRead] Envío exitoso de actualización a Supabase para ${messageIdsToUpdate.length} mensajes para el usuario ${selectedUser.id}`
-        );
-      } catch (error) {
-        console.error(
-          "[markMessagesAsRead] Error en markMessagesAsRead:",
-          error
-        );
-      }
-    };
-
+  useEffect(() => {
     if (selectedUser && selectedUser.unreadCount > 0) {
       console.log(
         `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount > 0 (${selectedUser.unreadCount}). Llamando a markMessagesAsRead.`
@@ -684,7 +697,7 @@ const ChatWindow = () => {
         `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount de 0. No se necesita acción.`
       );
     }
-  }, [selectedUser, conversations]);
+  }, [selectedUser, conversations, markMessagesAsRead]);
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
@@ -701,28 +714,7 @@ const ChatWindow = () => {
     }
 
     const now = new Date();
-
-    const messageToSend = {
-      fromMe: true,
-      text: newMessage,
-      time: now.toLocaleString("es-MX", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      createdAt: now,
-    };
-
-    setConversations((prevConversations) => {
-      const updatedConvo = { ...prevConversations[selectedUser.id] };
-      updatedConvo.messages = [...(updatedConvo.messages || []), messageToSend];
-      return {
-        ...prevConversations,
-        [selectedUser.id]: updatedConvo,
-      };
-    });
+    const messageContent = newMessage;
     setNewMessage("");
     setSendingMessage(true);
 
@@ -732,7 +724,7 @@ const ChatWindow = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           recipientId: selectedUser.id,
-          message: messageToSend.text,
+          message: messageContent,
         }),
       });
 
@@ -741,7 +733,7 @@ const ChatWindow = () => {
           {
             session_id: selectedUser.id,
             role: "assistant",
-            content: messageToSend.text,
+            content: messageContent,
             created_at: now.toISOString(),
             canal: conversations[selectedUser.id]?.canal || "desconocido",
             leido: true,
@@ -750,17 +742,7 @@ const ChatWindow = () => {
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
-          setConversations((prevConversations) => {
-            const updatedConvo = { ...prevConversations[selectedUser.id] };
-            updatedConvo.messages = updatedConvo.messages.filter(
-              (msg) => msg !== messageToSend
-            );
-            return {
-              ...prevConversations,
-              [selectedUser.id]: updatedConvo,
-            };
-          });
-          setNewMessage(messageToSend.text);
+          setNewMessage(messageContent);
         } else {
           console.log("Mensaje guardado en Supabase:", data);
         }
@@ -770,28 +752,11 @@ const ChatWindow = () => {
           res.status,
           await res.text()
         );
-        setConversations((prevConversations) => {
-          const updatedConvo = { ...prevConversations[selectedUser.id] };
-          updatedConvo.messages = updatedConvo.messages.filter(
-            (msg) => msg !== messageToSend
-          );
-          return {
-            ...prevConversations,
-            [selectedUser.id]: updatedConvo,
-          };
-        });
-        setNewMessage(messageToSend.text);
+        setNewMessage(messageContent);
       }
     } catch (err) {
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
-      setConversations((prevConversations) => ({
-        ...prevConversations,
-        [selectedUser.id]: {
-          ...prevConversations[selectedUser.id],
-          messages: prevConversations[selectedUser.id].messages.slice(0, -1),
-        },
-      }));
-      setNewMessage(messageToSend.text);
+      setNewMessage(messageContent);
     } finally {
       setSendingMessage(false);
     }
@@ -968,32 +933,54 @@ const ChatWindow = () => {
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
               const canal = userConvo?.canal;
+
+              const isSelected = user.id === selectedUser?.id;
+
               return (
-                <ListItem
+                <ListItemButton
                   key={user.id}
-                  button
-                  selected={user.id === selectedUser?.id}
+                  selected={isSelected}
                   onClick={() => setSelectedUser(user)}
                   sx={{
-                    "&.Mui-selected": {
-                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
-                      borderRadius: 2,
-                      mx: 1,
-                      color: "white",
-                    },
-                    bgcolor: user.unreadCount > 0 ? "#e0f2f1" : "inherit",
                     mx: 1,
                     borderRadius: 2,
                     minHeight: 72,
-                    "&.Mui-selected, &.Mui-selected:hover": {
-                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
-                      color: "white",
-                    },
+                    transition:
+                      "background-color 0.3s ease, color 0.3s ease, border-left-color 0.3s ease",
+                    borderLeft: "4px solid transparent",
+                    paddingLeft: (theme) => theme.spacing(2),
+
+                    // --- ESTILOS PARA CHATS NO SELECCIONADOS (CON MENSAJES NO LEÍDOS) ---
+                    // Fondo sutil para mensajes no leídos (similar al verde de WhatsApp)
+                    bgcolor:
+                      user.unreadCount > 0
+                        ? "rgba(37, 211, 102, 0.05)"
+                        : "inherit", // Verde muy sutil
+                    color: "text.primary", // Mantener color de texto primario
+
+                    // Estilos al hacer hover sobre chats NO seleccionados
                     "&:hover": {
+                      // Ligeramente más oscuro si hay no leídos, o el hover normal
                       bgcolor:
                         user.unreadCount > 0
-                          ? "#c8e6e3"
+                          ? "rgba(37, 211, 102, 0.1)"
                           : "rgba(0, 0, 0, 0.04)",
+                      color: "text.primary",
+                    },
+
+                    // --- ESTILOS PARA EL CHAT SELECCIONADO ---
+                    "&.Mui-selected": {
+                      bgcolor: "#e7f3ff", // Azul muy claro para el fondo
+                      color: "text.primary",
+                      borderLeft: "4px solid #1976d2", // Borde azul de selección
+                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
+                    },
+                    // Estilos al hacer hover sobre el chat SELECCIONADO
+                    "&.Mui-selected:hover": {
+                      bgcolor: "#d7e3f7", // Azul ligeramente más oscuro en hover
+                      color: "text.primary",
+                      borderLeft: "4px solid #1976d2",
+                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
                     },
                   }}
                 >
@@ -1030,8 +1017,8 @@ const ChatWindow = () => {
                           {user.unreadCount > 0 && (
                             <Box
                               sx={{
-                                bgcolor: "#25D366",
-                                color: "white",
+                                bgcolor: "#25D366", // Fondo verde (WhatsApp)
+                                color: "white", // Texto blanco
                                 borderRadius: "12px",
                                 px: 1,
                                 py: 0.2,
@@ -1096,7 +1083,7 @@ const ChatWindow = () => {
                       )
                     }
                   />
-                </ListItem>
+                </ListItemButton>
               );
             })}
           </List>
