@@ -15,7 +15,8 @@ import {
   Stack,
   TextField,
   Typography,
-  ListItemButton, // <-- Asegúrate de importar ListItemButton
+  ListItemButton,
+  Button, // Importar Button para el botón de limpiar imagen
 } from "@mui/material";
 import { useEffect, useRef, useState, useCallback } from "react";
 import supabase from "../supabaseClient";
@@ -36,8 +37,11 @@ import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
+import AttachFileIcon from "@mui/icons-material/AttachFile"; // Icono para adjuntar archivo
+import CloseIcon from "@mui/icons-material/Close"; // Icono para cerrar previsualización
 
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
+const SUPABASE_STORAGE_BUCKET = "chat-images"; // Nombre del bucket de Supabase Storage
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
@@ -92,12 +96,25 @@ const getTemperatureIcon = (temperatureInternal, size = 16) => {
   }
 };
 
+// Función auxiliar para verificar si una cadena es una URL de imagen
+const isImageUrl = (url) => {
+  // Asegurarse de que 'url' es una cadena antes de intentar métodos de cadena
+  return (
+    typeof url === "string" &&
+    (url.endsWith(".jpg") ||
+      url.endsWith(".jpeg") ||
+      url.endsWith(".png") ||
+      url.endsWith(".gif") ||
+      url.endsWith(".webp"))
+  );
+};
+
 const ChatWindow = () => {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [conversations, setConversations] = useState({});
   const [newMessage, setNewMessage] = useState("");
-  const [userProfiles, setUserProfiles] = useState({}); // Mantener este estado para el componente
+  const [userProfiles, setUserProfiles] = useState({});
   const messagesEndRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [channelFilter, setChannelFilter] = useState("todos");
@@ -105,11 +122,16 @@ const ChatWindow = () => {
   const [loading, setLoading] = useState(true);
   const [sendingMessage, setSendingMessage] = useState(false);
 
+  // --- Estados para adjuntar imágenes ---
+  const [selectedImage, setSelectedImage] = useState(null); // El archivo de imagen
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null); // URL para la previsualización
+  const fileInputRef = useRef(null); // Ref para el input de archivo
+
   // Refs para acceso estable al estado más reciente dentro de los callbacks
   const conversationsRef = useRef(conversations);
   const usersRef = useRef(users);
   const selectedUserRef = useRef(selectedUser);
-  const userProfilesRef = useRef(userProfiles); // Ref para el userProfiles más reciente
+  const userProfilesRef = useRef(userProfiles);
 
   // Actualizar refs cada vez que el estado cambia
   useEffect(() => {
@@ -125,7 +147,7 @@ const ChatWindow = () => {
   }, [selectedUser]);
 
   useEffect(() => {
-    userProfilesRef.current = userProfiles; // Actualizar la ref cuando userProfiles cambia
+    userProfilesRef.current = userProfiles;
   }, [userProfiles]);
 
   // --- FUNCIONES AUXILIARES PARA EL MANEJO DE ESTADO ---
@@ -169,10 +191,8 @@ const ChatWindow = () => {
       .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
 
     setUsers(uniqueUsers);
-    // setLoading(false); // No establecer aquí, se hará en el efecto principal
   }, []);
 
-  // MODIFICADO: Aceptar 'profilesArg' como argumento
   const processChatlogData = useCallback(
     (data, profilesArg) => {
       const groupedBySession = data.reduce((acc, msg) => {
@@ -185,7 +205,7 @@ const ChatWindow = () => {
         acc[sessionId].push({
           id: msg.id,
           fromMe: msg.role === "assistant",
-          text: msg.content,
+          text: msg.content, // 'content' puede ser texto o URL de imagen
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
             month: "2-digit",
@@ -219,7 +239,7 @@ const ChatWindow = () => {
         };
       });
       setConversations(cleanedConversations);
-      updateUsersList(cleanedConversations, profilesArg); // Usar profilesArg
+      updateUsersList(cleanedConversations, profilesArg);
     },
     [updateUsersList]
   );
@@ -303,7 +323,7 @@ const ChatWindow = () => {
       console.log(
         `[RT-INSERT] Nuevo mensaje para sesión ${newRecord.session_id}. Rol: ${
           newRecord.role
-        }, Contenido: ${newRecord.content.substring(0, 30)}...`
+        }, Contenido: ${newRecord.content?.substring(0, 30)}...` // Usar ?. para evitar error si content es null
       );
 
       setConversations((prevConversations) => {
@@ -435,14 +455,12 @@ const ChatWindow = () => {
   const crmChannelRef = useRef(null);
   const chatlogChannelRef = useRef(null);
 
-  // NUEVO EFECTO: Carga inicial de datos y suscripciones en tiempo real
   useEffect(() => {
     const setupInitialDataAndSubscriptions = async () => {
       console.log("--- setupInitialDataAndSubscriptions iniciando ---");
-      setLoading(true); // Iniciar carga
+      setLoading(true);
 
       try {
-        // 1. Obtener perfiles de CRM
         const { data: crmData, error: crmError } = await supabase
           .from(TABLE_NAME)
           .select(
@@ -471,9 +489,8 @@ const ChatWindow = () => {
             };
           }
         });
-        setUserProfiles(profiles); // Actualizar el estado userProfiles
+        setUserProfiles(profiles);
 
-        // 2. Obtener datos iniciales del chatlog
         const { data: chatlogData, error: chatlogError } = await supabase
           .from("chatlog")
           .select("id, session_id, role, content, created_at, canal, leido");
@@ -483,10 +500,8 @@ const ChatWindow = () => {
             `Error fetching initial chat log: ${chatlogError.message}`
           );
 
-        // Procesar datos del chatlog usando los perfiles recién cargados
-        processChatlogData(chatlogData, profiles); // Pasar 'profiles' directamente
+        processChatlogData(chatlogData, profiles);
 
-        // 3. Suscribirse a los cambios en tiempo real de CRM (solo si no está ya suscrito)
         if (!crmChannelRef.current) {
           console.log("Suscribiendo al canal de crm...");
           crmChannelRef.current = supabase
@@ -499,7 +514,6 @@ const ChatWindow = () => {
             .subscribe();
         }
 
-        // 4. Suscribirse a los cambios en tiempo real del chatlog (solo si no está ya suscrito)
         if (!chatlogChannelRef.current) {
           console.log("Suscribiendo al canal de chatlog...");
           chatlogChannelRef.current = supabase
@@ -512,7 +526,7 @@ const ChatWindow = () => {
             .subscribe();
         }
 
-        setLoading(false); // Finalizar carga
+        setLoading(false);
         console.log("--- setupInitialDataAndSubscriptions finalizado ---");
       } catch (error) {
         console.error("Error en setupInitialDataAndSubscriptions:", error);
@@ -522,7 +536,6 @@ const ChatWindow = () => {
 
     setupInitialDataAndSubscriptions();
 
-    // Función de limpieza para ambos canales
     return () => {
       console.log("Desuscribiendo todos los canales...");
       if (crmChannelRef.current) {
@@ -538,9 +551,8 @@ const ChatWindow = () => {
     processChatlogData,
     handleRealtimeCrmChange,
     handleRealtimeChatlogChange,
-  ]); // Dependencias: callbacks estables
+  ]);
 
-  // El useEffect para seleccionar el usuario inicial puede permanecer, ya que depende de 'users' y 'loading'
   useEffect(() => {
     if (!loading && users.length > 0) {
       if (!selectedUser || !users.some((u) => u.id === selectedUser.id)) {
@@ -703,8 +715,66 @@ const ChatWindow = () => {
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
+  // --- Funciones para manejar la carga de imágenes ---
+  const handleImageSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedImage(file);
+      setImagePreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const clearImageSelection = () => {
+    setSelectedImage(null);
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl); // Liberar el objeto URL
+      setImagePreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; // Limpiar el input de archivo
+    }
+  };
+
+  const uploadImageToSupabase = async (file) => {
+    if (!selectedUser) {
+      throw new Error("No hay usuario seleccionado para adjuntar la imagen.");
+    }
+
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 15)}.${fileExt}`;
+    // Guardar en una carpeta por session_id
+    const filePath = `${selectedUser.id}/${fileName}`;
+
+    console.log(`Subiendo imagen a: ${SUPABASE_STORAGE_BUCKET}/${filePath}`);
+
+    const { data, error } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      console.error("Error al subir imagen a Supabase Storage:", error);
+      throw error;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .getPublicUrl(filePath);
+
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error("No se pudo obtener la URL pública de la imagen.");
+    }
+
+    console.log("Imagen subida exitosamente. URL:", publicUrlData.publicUrl);
+    return publicUrlData.publicUrl;
+  };
+
   const handleSend = async () => {
-    if (!newMessage.trim() || !selectedUser) return;
+    if (!selectedUser || (!newMessage.trim() && !selectedImage)) return;
 
     if (!isFreeFormMessageAllowedBy24HourRule()) {
       console.warn(
@@ -714,18 +784,31 @@ const ChatWindow = () => {
     }
 
     const now = new Date();
-    const messageContent = newMessage;
+    let messageContent = newMessage;
+    let imageUrlToSend = null;
+
     setNewMessage("");
     setSendingMessage(true);
 
     try {
+      if (selectedImage) {
+        imageUrlToSend = await uploadImageToSupabase(selectedImage);
+        messageContent = imageUrlToSend; // Si hay imagen, el contenido principal es la URL de la imagen
+        clearImageSelection(); // Limpiar previsualización después de subir
+      }
+
+      const payload = {
+        recipientId: selectedUser.id,
+        message: messageContent,
+        // Si quieres enviar texto y URL de imagen por separado al backend, podrías hacer:
+        // message: newMessage.trim() ? newMessage : undefined,
+        // imageUrl: imageUrlToSend,
+      };
+
       const res = await fetch("/api/send-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipientId: selectedUser.id,
-          message: messageContent,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -733,7 +816,7 @@ const ChatWindow = () => {
           {
             session_id: selectedUser.id,
             role: "assistant",
-            content: messageContent,
+            content: messageContent, // Guardar la URL de la imagen o el texto
             created_at: now.toISOString(),
             canal: conversations[selectedUser.id]?.canal || "desconocido",
             leido: true,
@@ -742,9 +825,10 @@ const ChatWindow = () => {
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
-          setNewMessage(messageContent);
+          // Opcional: revertir UI si falla el guardado en DB
+          if (!selectedImage) setNewMessage(messageContent);
         } else {
-          console.log("Mensaje guardado en Supabase:", data);
+          console.log("Mensaje/Imagen guardado en Supabase:", data);
         }
       } else {
         console.error(
@@ -752,11 +836,11 @@ const ChatWindow = () => {
           res.status,
           await res.text()
         );
-        setNewMessage(messageContent);
+        if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
       }
     } catch (err) {
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
-      setNewMessage(messageContent);
+      if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
     } finally {
       setSendingMessage(false);
     }
@@ -823,7 +907,10 @@ const ChatWindow = () => {
   };
 
   const isInputDisabled =
-    !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
+    !selectedUser ||
+    sendingMessage ||
+    (!newMessage.trim() && !selectedImage) || // Deshabilitar si no hay texto ni imagen
+    !isFreeFormMessageAllowedBy24HourRule();
 
   console.log(
     `Render: selectedUser: ${
@@ -950,17 +1037,13 @@ const ChatWindow = () => {
                     borderLeft: "4px solid transparent",
                     paddingLeft: (theme) => theme.spacing(2),
 
-                    // --- ESTILOS PARA CHATS NO SELECCIONADOS (CON MENSAJES NO LEÍDOS) ---
-                    // Fondo sutil para mensajes no leídos (similar al verde de WhatsApp)
                     bgcolor:
                       user.unreadCount > 0
                         ? "rgba(37, 211, 102, 0.05)"
-                        : "inherit", // Verde muy sutil
-                    color: "text.primary", // Mantener color de texto primario
+                        : "inherit",
+                    color: "text.primary",
 
-                    // Estilos al hacer hover sobre chats NO seleccionados
                     "&:hover": {
-                      // Ligeramente más oscuro si hay no leídos, o el hover normal
                       bgcolor:
                         user.unreadCount > 0
                           ? "rgba(37, 211, 102, 0.1)"
@@ -968,16 +1051,14 @@ const ChatWindow = () => {
                       color: "text.primary",
                     },
 
-                    // --- ESTILOS PARA EL CHAT SELECCIONADO ---
                     "&.Mui-selected": {
-                      bgcolor: "#e7f3ff", // Azul muy claro para el fondo
+                      bgcolor: "#e7f3ff",
                       color: "text.primary",
-                      borderLeft: "4px solid #1976d2", // Borde azul de selección
+                      borderLeft: "4px solid #1976d2",
                       paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
                     },
-                    // Estilos al hacer hover sobre el chat SELECCIONADO
                     "&.Mui-selected:hover": {
-                      bgcolor: "#d7e3f7", // Azul ligeramente más oscuro en hover
+                      bgcolor: "#d7e3f7",
                       color: "text.primary",
                       borderLeft: "4px solid #1976d2",
                       paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
@@ -1017,8 +1098,8 @@ const ChatWindow = () => {
                           {user.unreadCount > 0 && (
                             <Box
                               sx={{
-                                bgcolor: "#25D366", // Fondo verde (WhatsApp)
-                                color: "white", // Texto blanco
+                                bgcolor: "#25D366",
+                                color: "white",
                                 borderRadius: "12px",
                                 px: 1,
                                 py: 0.2,
@@ -1072,7 +1153,9 @@ const ChatWindow = () => {
                                 user.unreadCount > 0 ? "600" : "normal",
                             }}
                           >
-                            {lastMsg.text}
+                            {isImageUrl(lastMsg.text)
+                              ? "🖼️ Imagen"
+                              : lastMsg.text}
                           </Typography>
                           {canal && getChannelIcon(canal, 14)}
                           {user.temperatura &&
@@ -1145,7 +1228,21 @@ const ChatWindow = () => {
                     maxWidth: "70%",
                   }}
                 >
-                  <Typography variant="body2">{msg.text}</Typography>
+                  {isImageUrl(msg.text) ? (
+                    <img
+                      src={msg.text}
+                      alt="Imagen adjunta"
+                      style={{ maxWidth: "100%", borderRadius: "8px" }}
+                    />
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      // MODIFICACIÓN CLAVE AQUÍ: (msg.text || "") asegura que msg.text es una cadena.
+                      dangerouslySetInnerHTML={{
+                        __html: (msg.text || "").replace(/\n/g, "<br />"),
+                      }}
+                    />
+                  )}
                   <Typography
                     variant="caption"
                     display="block"
@@ -1193,7 +1290,72 @@ const ChatWindow = () => {
               </Typography>
             )}
 
+            {/* Previsualización de imagen */}
+            {imagePreviewUrl && (
+              <Box
+                sx={{
+                  mb: 2,
+                  p: 1,
+                  border: "1px solid #ddd",
+                  borderRadius: 2,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  position: "relative",
+                  maxWidth: "300px", // Limitar el tamaño de la previsualización
+                  mx: "auto",
+                }}
+              >
+                <img
+                  src={imagePreviewUrl}
+                  alt="Previsualización"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "150px",
+                    borderRadius: "4px",
+                  }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={clearImageSelection}
+                  sx={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    bgcolor: "rgba(255,255,255,0.7)",
+                    "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+                  }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
+
             <Box sx={{ display: "flex", width: "100%" }}>
+              {/* Input de archivo oculto */}
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                onChange={handleImageSelect}
+                disabled={
+                  !selectedUser || !isFreeFormMessageAllowedBy24HourRule()
+                }
+              />
+              {/* Botón para adjuntar imágenes */}
+              <IconButton
+                onClick={() => fileInputRef.current?.click()}
+                size="small"
+                disabled={
+                  !selectedUser ||
+                  sendingMessage ||
+                  !isFreeFormMessageAllowedBy24HourRule()
+                }
+                style={{ marginRight: "1rem" }}
+              >
+                <AttachFileIcon />
+              </IconButton>
+
               <TextField
                 fullWidth
                 variant="outlined"
