@@ -7,7 +7,6 @@ import {
   IconButton,
   InputLabel,
   List,
-  ListItem,
   ListItemAvatar,
   ListItemText,
   MenuItem,
@@ -16,13 +15,11 @@ import {
   Stack,
   TextField,
   Typography,
+  ListItemButton,
+  Button, // Importar Button para el botón de limpiar imagen
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import supabase from "../supabaseClient";
-import SendIcon from "@mui/icons-material/Send";
-import PauseIcon from "@mui/icons-material/Pause";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
 
 // Importar iconos para los canales
 import InstagramIcon from "@mui/icons-material/Instagram";
@@ -36,12 +33,15 @@ import AcUnitIcon from "@mui/icons-material/AcUnit";
 import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import SendIcon from "@mui/icons-material/Send";
+import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
+import AttachFileIcon from "@mui/icons-material/AttachFile"; // Icono para adjuntar archivo
+import CloseIcon from "@mui/icons-material/Close"; // Icono para cerrar previsualización
 
-const API_KEY = import.meta.env.VITE_API_KEY;
-const BASE_ID = import.meta.env.VITE_BASE_ID;
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
-
-console.log(API_KEY);
+const SUPABASE_STORAGE_BUCKET = "chat-images"; // Nombre del bucket de Supabase Storage
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
@@ -53,7 +53,6 @@ const TEMPERATURE_DISPLAY_MAP = {
 
 const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
 
-// Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
 const normalizeTemperatureInternal = (temp) => {
   if (!temp) return "desconocido";
   const lowerTemp = String(temp)
@@ -66,7 +65,6 @@ const normalizeTemperatureInternal = (temp) => {
   return "desconocido";
 };
 
-// Funciones para obtener iconos de canal (MOVIDAS FUERA DEL COMPONENTE)
 const getChannelIcon = (channel, size = 16) => {
   switch (channel?.toLowerCase()) {
     case "instagram":
@@ -83,7 +81,6 @@ const getChannelIcon = (channel, size = 16) => {
   }
 };
 
-// Funciones para obtener iconos de temperatura (MOVIDAS FUERA DEL COMPONENTE)
 const getTemperatureIcon = (temperatureInternal, size = 16) => {
   switch (temperatureInternal) {
     case "frio":
@@ -99,6 +96,19 @@ const getTemperatureIcon = (temperatureInternal, size = 16) => {
   }
 };
 
+// Función auxiliar para verificar si una cadena es una URL de imagen
+const isImageUrl = (url) => {
+  // Asegurarse de que 'url' es una cadena antes de intentar métodos de cadena
+  return (
+    typeof url === "string" &&
+    (url.endsWith(".jpg") ||
+      url.endsWith(".jpeg") ||
+      url.endsWith(".png") ||
+      url.endsWith(".gif") ||
+      url.endsWith(".webp"))
+  );
+};
+
 const ChatWindow = () => {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -107,192 +117,84 @@ const ChatWindow = () => {
   const [userProfiles, setUserProfiles] = useState({});
   const messagesEndRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sendingMessage, setSendingMessage] = useState(false);
   const [channelFilter, setChannelFilter] = useState("todos");
-  const [temperatureFilter, setTemperatureFilter] = useState([
-    "tibio",
-    "caliente",
-  ]);
+  const [temperatureFilter, setTemperatureFilter] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  // --- Estados para adjuntar imágenes ---
+  const [selectedImage, setSelectedImage] = useState(null); // El archivo de imagen
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null); // URL para la previsualización
+  const fileInputRef = useRef(null); // Ref para el input de archivo
+
+  // Refs para acceso estable al estado más reciente dentro de los callbacks
+  const conversationsRef = useRef(conversations);
+  const usersRef = useRef(users);
+  const selectedUserRef = useRef(selectedUser);
+  const userProfilesRef = useRef(userProfiles);
+
+  // Actualizar refs cada vez que el estado cambia
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   useEffect(() => {
-    const fetchAirtableRecords = async () => {
-      try {
-        const response = await fetch(
-          `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}`,
-          {
-            headers: {
-              Authorization: `Bearer ${API_KEY}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        if (!response.ok) throw new Error("Error al obtener leads");
+    usersRef.current = users;
+  }, [users]);
 
-        const data = await response.json();
-        const profiles = {};
-        data.records.forEach((record) => {
-          const senderId = record.fields["session_id"];
-          if (senderId) {
-            profiles[senderId] = {
-              id_airtable: record.id,
-              name: record.fields["nombre"] || senderId,
-              email: record.fields["username"] || "Sin correo",
-              phone: record.fields["telefono"] || "Sin teléfono",
-              avatar:
-                record.fields["profile_pic"] ||
-                `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-              temperatura: normalizeTemperatureInternal(
-                record.fields["temperatura"]
-              ),
-              isPaused: record.fields["pause"] || false,
-            };
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
+
+  useEffect(() => {
+    userProfilesRef.current = userProfiles;
+  }, [userProfiles]);
+
+  // --- FUNCIONES AUXILIARES PARA EL MANEJO DE ESTADO ---
+
+  const updateUsersList = useCallback((currentConversations, profiles) => {
+    const uniqueUsers = Object.keys(currentConversations)
+      .map((sessionId) => {
+        const profile = profiles[sessionId];
+        if (!profile) {
+          console.warn(
+            `No se encontró perfil en chat_crm para session_id: ${sessionId}. Este usuario podría no mostrarse completamente.`
+          );
+          return null;
+        }
+
+        const messagesForSession = currentConversations[sessionId].messages;
+        const lastMessage = messagesForSession[messagesForSession.length - 1];
+        const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
+
+        let unreadCount = 0;
+        messagesForSession.forEach((msg) => {
+          if (msg.fromMe === false && msg.leido === false) {
+            unreadCount++;
           }
         });
-        setUserProfiles(profiles);
-      } catch (error) {
-        console.error("Error al obtener leads:", error);
-      }
-    };
-    fetchAirtableRecords();
+
+        return {
+          id: sessionId,
+          id_supabase: profile.id_supabase,
+          name: profile.name,
+          email: profile.email,
+          phone: profile.phone,
+          avatar: profile.avatar,
+          temperatura: profile.temperatura,
+          isPaused: profile.isPaused,
+          lastCreatedAt,
+          unreadCount: unreadCount,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
+
+    setUsers(uniqueUsers);
   }, []);
 
-  const handlePauseChat = async () => {
-    if (!selectedUser) return;
-
-    try {
-      const recordId = selectedUser.id_airtable;
-
-      if (!recordId) {
-        console.warn(
-          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede pausar.`
-        );
-        return;
-      }
-
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fields: {
-              pause: true,
-            },
-          }),
-        }
-      );
-
-      if (!updateResponse.ok) {
-        throw new Error(
-          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
-        );
-      }
-
-      console.log(
-        "Atributo 'pause' actualizado a true en Airtable para el record:",
-        recordId
-      );
-
-      setUserProfiles((prevProfiles) => ({
-        ...prevProfiles,
-        [selectedUser.id]: {
-          ...prevProfiles[selectedUser.id],
-          isPaused: true,
-        },
-      }));
-
-      setSelectedUser((prevSelectedUser) => {
-        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
-          return {
-            ...prevSelectedUser,
-            isPaused: true,
-          };
-        }
-        return prevSelectedUser;
-      });
-    } catch (airtableError) {
-      console.error("Error al interactuar con Airtable:", airtableError);
-    }
-  };
-
-  const handleUnpauseChat = async () => {
-    if (!selectedUser) return;
-
-    try {
-      const recordId = selectedUser.id_airtable;
-
-      if (!recordId) {
-        console.warn(
-          `No se encontró id_airtable para el usuario seleccionado: ${selectedUser.id}. No se puede despausar.`
-        );
-        return;
-      }
-
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fields: {
-              pause: false, // Set pause to false
-            },
-          }),
-        }
-      );
-
-      if (!updateResponse.ok) {
-        throw new Error(
-          `Error al actualizar registro en Airtable: ${updateResponse.statusText}`
-        );
-      }
-
-      console.log(
-        "Atributo 'pause' actualizado a false en Airtable para el record:",
-        recordId
-      );
-
-      setUserProfiles((prevProfiles) => ({
-        ...prevProfiles,
-        [selectedUser.id]: {
-          ...prevProfiles[selectedUser.id],
-          isPaused: false,
-        },
-      }));
-
-      setSelectedUser((prevSelectedUser) => {
-        if (prevSelectedUser && prevSelectedUser.id === selectedUser.id) {
-          return {
-            ...prevSelectedUser,
-            isPaused: false,
-          };
-        }
-        return prevSelectedUser;
-      });
-    } catch (airtableError) {
-      console.error("Error al interactuar con Airtable:", airtableError);
-    }
-  };
-
-  useEffect(() => {
-    const getChatLog = async () => {
-      // MODIFIED: Select 'id' and 'leido' explicitly
-      const { data, error } = await supabase
-        .from("chatlog")
-        .select("id, *, leido");
-      if (error) {
-        console.error("Error fetching chat log:", error);
-        setLoading(false);
-        return;
-      }
-
+  const processChatlogData = useCallback(
+    (data, profilesArg) => {
       const groupedBySession = data.reduce((acc, msg) => {
         const sessionId = msg.session_id;
         if (!acc[sessionId]) {
@@ -301,9 +203,9 @@ const ChatWindow = () => {
         }
         const createdAt = new Date(msg.created_at);
         acc[sessionId].push({
-          id: msg.id, // ADDED: Include message id
+          id: msg.id,
           fromMe: msg.role === "assistant",
-          text: msg.content,
+          text: msg.content, // 'content' puede ser texto o URL de imagen
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
             month: "2-digit",
@@ -321,48 +223,13 @@ const ChatWindow = () => {
         groupedBySession[sessionId].sort((a, b) => a.createdAt - b.createdAt);
       });
 
-      const uniqueUsers = Object.keys(groupedBySession)
-        .map((sessionId) => {
-          const profile = userProfiles[sessionId];
-          const messagesForSession = groupedBySession[sessionId];
-          const lastMessage = messagesForSession[messagesForSession.length - 1];
-          const lastCreatedAt = new Date(lastMessage?.createdAt || 0);
-
-          // MODIFIED: Calculate unreadCount
-          let unreadCount = 0;
-          messagesForSession.forEach((msg) => {
-            if (msg.fromMe === false && msg.leido === false) {
-              // Message from the user AND unread
-              unreadCount++;
-            }
-          });
-
-          return {
-            id: sessionId,
-            id_airtable: profile?.id_airtable,
-            name: profile?.name || sessionId,
-            email: profile?.email || "Sin correo",
-            phone: profile?.phone || "Sin teléfono",
-            avatar:
-              profile?.avatar ||
-              `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-            temperatura: normalizeTemperatureInternal(profile?.temperatura),
-            isPaused: profile?.isPaused || false,
-            lastCreatedAt,
-            unreadCount: unreadCount, // MODIFIED: Use unreadCount
-          };
-        })
-        .sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
-
-      setUsers(uniqueUsers.map(({ lastCreatedAt, ...rest }) => rest));
-
       const cleanedConversations = {};
       Object.entries(groupedBySession).forEach(([sessionId, messages]) => {
         const canal = groupedBySession[sessionId].canal || "desconocido";
         cleanedConversations[sessionId] = {
           canal,
           messages: messages.map((msg) => ({
-            id: msg.id, // Ensure 'id' is passed to conversation messages
+            id: msg.id,
             fromMe: msg.fromMe,
             text: msg.text,
             time: msg.time,
@@ -372,160 +239,576 @@ const ChatWindow = () => {
         };
       });
       setConversations(cleanedConversations);
+      updateUsersList(cleanedConversations, profilesArg);
+    },
+    [updateUsersList]
+  );
 
-      if (uniqueUsers.length > 0) {
-        if (
-          !selectedUser ||
-          !uniqueUsers.some((u) => u.id === selectedUser.id)
-        ) {
-          setSelectedUser(uniqueUsers[0]);
-        } else {
-          const currentSelectedUserUpdated = uniqueUsers.find(
-            (u) => u.id === selectedUser.id
-          );
-          if (
-            currentSelectedUserUpdated &&
-            (currentSelectedUserUpdated.isPaused !== selectedUser.isPaused ||
-              currentSelectedUserUpdated.unreadCount !==
-                selectedUser.unreadCount)
-          ) {
-            // Check for unread status change too
-            setSelectedUser(currentSelectedUserUpdated);
-          }
+  const handleRealtimeCrmChange = useCallback((payload) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    if (newRecord && newRecord.session_id) {
+      const sessionId = newRecord.session_id;
+      const updatedProfile = {
+        id_supabase: newRecord.session_id,
+        name: newRecord.nombre || sessionId,
+        email: newRecord.username || "Sin correo",
+        phone: newRecord.telefono || "Sin teléfono",
+        avatar:
+          newRecord.profile_pic ||
+          `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
+        temperatura: normalizeTemperatureInternal(newRecord.temperatura),
+        isPaused: newRecord.pause || false,
+      };
+
+      setUserProfiles((prevProfiles) => ({
+        ...prevProfiles,
+        [sessionId]: updatedProfile,
+      }));
+
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === sessionId
+            ? {
+                ...user,
+                name: updatedProfile.name,
+                email: updatedProfile.email,
+                phone: updatedProfile.phone,
+                avatar: updatedProfile.avatar,
+                temperatura: updatedProfile.temperatura,
+                isPaused: updatedProfile.isPaused,
+              }
+            : user
+        )
+      );
+
+      setSelectedUser((prevSelectedUser) => {
+        if (prevSelectedUser && prevSelectedUser.id === sessionId) {
+          return {
+            ...prevSelectedUser,
+            name: updatedProfile.name,
+            email: updatedProfile.email,
+            phone: updatedProfile.phone,
+            avatar: updatedProfile.avatar,
+            temperatura: updatedProfile.temperatura,
+            isPaused: updatedProfile.isPaused,
+          };
         }
-      } else {
-        setSelectedUser(null);
+        return prevSelectedUser;
+      });
+    }
+  }, []);
+
+  const handleRealtimeChatlogChange = useCallback((payload) => {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+
+    if (eventType === "INSERT") {
+      const sessionId = newRecord.session_id;
+      const createdAt = new Date(newRecord.created_at);
+      const newMessage = {
+        id: newRecord.id,
+        fromMe: newRecord.role === "assistant",
+        text: newRecord.content,
+        time: createdAt.toLocaleString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        createdAt,
+        leido: newRecord.leido,
+      };
+
+      console.log(
+        `[RT-INSERT] Nuevo mensaje para sesión ${newRecord.session_id}. Rol: ${
+          newRecord.role
+        }, Contenido: ${newRecord.content?.substring(0, 30)}...` // Usar ?. para evitar error si content es null
+      );
+
+      setConversations((prevConversations) => {
+        const updatedConversations = { ...prevConversations };
+        if (!updatedConversations[sessionId]) {
+          updatedConversations[sessionId] = {
+            canal: newRecord.canal || "desconocido",
+            messages: [],
+          };
+        }
+        const existingMessages = updatedConversations[sessionId].messages;
+        const messageAlreadyExists = existingMessages.some(
+          (msg) => msg.id === newMessage.id
+        );
+
+        if (messageAlreadyExists) {
+          console.warn(
+            `[RT-INSERT] Mensaje con ID ${newMessage.id} ya existe en la conversación ${sessionId}. Ignorando duplicado.`
+          );
+          return prevConversations;
+        }
+
+        updatedConversations[sessionId].messages = [
+          ...existingMessages,
+          newMessage,
+        ];
+        return updatedConversations;
+      });
+
+      setUsers((prevUsers) => {
+        let userFound = false;
+        const updatedUsers = prevUsers.map((user) => {
+          if (user.id === sessionId) {
+            userFound = true;
+            let unreadCount = user.unreadCount;
+            if (
+              !newMessage.fromMe &&
+              sessionId !== selectedUserRef.current?.id
+            ) {
+              unreadCount++;
+            }
+            return {
+              ...user,
+              lastCreatedAt: createdAt,
+              unreadCount: unreadCount,
+            };
+          }
+          return user;
+        });
+
+        if (!userFound && userProfilesRef.current[sessionId]) {
+          const profile = userProfilesRef.current[sessionId];
+          const unreadCount =
+            !newMessage.fromMe && sessionId !== selectedUserRef.current?.id
+              ? 1
+              : 0;
+          const newUser = {
+            id: sessionId,
+            id_supabase: profile.id_supabase,
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            avatar: profile.avatar,
+            temperatura: profile.temperatura,
+            isPaused: profile.isPaused,
+            lastCreatedAt: createdAt,
+            unreadCount: unreadCount,
+          };
+          return [newUser, ...updatedUsers].sort(
+            (a, b) => b.lastCreatedAt - a.lastCreatedAt
+          );
+        }
+        return updatedUsers.sort((a, b) => b.lastCreatedAt - a.lastCreatedAt);
+      });
+    } else if (eventType === "UPDATE") {
+      const sessionId = newRecord.session_id;
+      const messageId = newRecord.id;
+
+      console.log(
+        `[RT-UPDATE] Mensaje ID ${messageId} para sesión ${sessionId}. Leído anterior: ${oldRecord.leido}, Nuevo leído: ${newRecord.leido}`
+      );
+
+      let currentSessionMessagesAfterUpdate = [];
+      setConversations((prevConversations) => {
+        const updatedConversations = { ...prevConversations };
+        if (updatedConversations[sessionId]) {
+          updatedConversations[sessionId].messages = updatedConversations[
+            sessionId
+          ].messages.map((msg) => {
+            const updatedMsg =
+              msg.id === messageId ? { ...msg, leido: newRecord.leido } : msg;
+            return updatedMsg;
+          });
+          currentSessionMessagesAfterUpdate =
+            updatedConversations[sessionId].messages;
+        } else {
+          console.warn(
+            `[RT-UPDATE] Sesión ${sessionId} no encontrada en el estado de conversaciones. No se puede actualizar el mensaje.`
+          );
+        }
+        return updatedConversations;
+      });
+
+      let newUnreadCountForSession = 0;
+      currentSessionMessagesAfterUpdate.forEach((msg) => {
+        if (!msg.fromMe && !msg.leido) {
+          newUnreadCountForSession++;
+        }
+      });
+
+      console.log(
+        `[RT-UPDATE] Recalculado el conteo de no leídos para la sesión ${sessionId}: ${newUnreadCountForSession}`
+      );
+
+      setUsers((prevUsers) => {
+        const updatedUsers = prevUsers.map((user) =>
+          user.id === sessionId
+            ? { ...user, unreadCount: newUnreadCountForSession }
+            : user
+        );
+        console.log(
+          `[RT-UPDATE] Estado de usuarios actualizado para la sesión ${sessionId}. Nuevo unreadCount: ${newUnreadCountForSession}`
+        );
+        return updatedUsers;
+      });
+    }
+  }, []);
+
+  const crmChannelRef = useRef(null);
+  const chatlogChannelRef = useRef(null);
+
+  useEffect(() => {
+    const setupInitialDataAndSubscriptions = async () => {
+      console.log("--- setupInitialDataAndSubscriptions iniciando ---");
+      setLoading(true);
+
+      try {
+        const { data: crmData, error: crmError } = await supabase
+          .from(TABLE_NAME)
+          .select(
+            "session_id, nombre, username, telefono, profile_pic, temperatura, pause"
+          );
+
+        if (crmError)
+          throw new Error(
+            `Error al obtener leads de Supabase: ${crmError.message}`
+          );
+
+        const profiles = {};
+        crmData.forEach((record) => {
+          const senderId = record.session_id;
+          if (senderId) {
+            profiles[senderId] = {
+              id_supabase: record.session_id,
+              name: record.nombre || senderId,
+              email: record.username || "Sin correo",
+              phone: record.telefono || "Sin teléfono",
+              avatar:
+                record.profile_pic ||
+                `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
+              temperatura: normalizeTemperatureInternal(record.temperatura),
+              isPaused: record.pause || false,
+            };
+          }
+        });
+        setUserProfiles(profiles);
+
+        const { data: chatlogData, error: chatlogError } = await supabase
+          .from("chatlog")
+          .select("id, session_id, role, content, created_at, canal, leido");
+
+        if (chatlogError)
+          throw new Error(
+            `Error fetching initial chat log: ${chatlogError.message}`
+          );
+
+        processChatlogData(chatlogData, profiles);
+
+        if (!crmChannelRef.current) {
+          console.log("Suscribiendo al canal de crm...");
+          crmChannelRef.current = supabase
+            .channel("crm_profile_changes")
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: TABLE_NAME },
+              handleRealtimeCrmChange
+            )
+            .subscribe();
+        }
+
+        if (!chatlogChannelRef.current) {
+          console.log("Suscribiendo al canal de chatlog...");
+          chatlogChannelRef.current = supabase
+            .channel("chat_log_changes")
+            .on(
+              "postgres_changes",
+              { event: "*", schema: "public", table: "chatlog" },
+              handleRealtimeChatlogChange
+            )
+            .subscribe();
+        }
+
+        setLoading(false);
+        console.log("--- setupInitialDataAndSubscriptions finalizado ---");
+      } catch (error) {
+        console.error("Error en setupInitialDataAndSubscriptions:", error);
+        setLoading(false);
       }
-      setLoading(false);
     };
 
-    if (Object.keys(userProfiles).length > 0 || !loading) {
-      getChatLog();
-    }
-  }, [userProfiles, selectedUser, loading]);
+    setupInitialDataAndSubscriptions();
 
-  // NEW: Effect to mark messages as read when a chat is selected
+    return () => {
+      console.log("Desuscribiendo todos los canales...");
+      if (crmChannelRef.current) {
+        supabase.removeChannel(crmChannelRef.current);
+        crmChannelRef.current = null;
+      }
+      if (chatlogChannelRef.current) {
+        supabase.removeChannel(chatlogChannelRef.current);
+        chatlogChannelRef.current = null;
+      }
+    };
+  }, [
+    processChatlogData,
+    handleRealtimeCrmChange,
+    handleRealtimeChatlogChange,
+  ]);
+
   useEffect(() => {
-    const markMessagesAsRead = async () => {
-      if (!selectedUser || !conversations[selectedUser.id]) {
+    if (!loading && users.length > 0) {
+      if (!selectedUser || !users.some((u) => u.id === selectedUser.id)) {
+        setSelectedUser(users[0]);
+        console.log("Usuario seleccionado inicialmente:", users[0]);
+      } else {
+        const currentSelectedUserUpdated = users.find(
+          (u) => u.id === selectedUser.id
+        );
+        if (
+          currentSelectedUserUpdated &&
+          (currentSelectedUserUpdated.isPaused !== selectedUser.isPaused ||
+            currentSelectedUserUpdated.unreadCount !== selectedUser.unreadCount)
+        ) {
+          setSelectedUser(currentSelectedUserUpdated);
+          console.log(
+            "Usuario seleccionado actualizado:",
+            currentSelectedUserUpdated
+          );
+        }
+      }
+    } else if (!loading && users.length === 0) {
+      setSelectedUser(null);
+      console.log("No hay usuarios, selectedUser establecido a null.");
+    }
+  }, [loading, users, selectedUser]);
+
+  const handlePauseChat = async () => {
+    if (!selectedUser) return;
+
+    try {
+      const recordId = selectedUser.id_supabase;
+
+      if (!recordId) {
+        console.warn(
+          `No se encontró id_supabase (session_id) para el usuario seleccionado: ${selectedUser.id}. No se puede pausar.`
+        );
         return;
       }
 
-      const messagesToMarkRead = conversations[selectedUser.id].messages.filter(
-        (msg) => !msg.fromMe && msg.leido === false
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .update({ pause: true })
+        .eq("session_id", recordId);
+
+      if (error) {
+        throw new Error(
+          `Error al actualizar registro en Supabase: ${error.message}`
+        );
+      }
+
+      console.log(
+        "Atributo 'pause' actualizado a true en Supabase para el record (session_id):",
+        recordId
       );
-
-      if (messagesToMarkRead.length === 0) {
-        return; // No unread messages from this user
-      }
-
-      const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
-      if (messageIdsToUpdate.length === 0) return;
-
-      try {
-        const { error: updateError } = await supabase
-          .from("chatlog")
-          .update({ leido: true })
-          .in("id", messageIdsToUpdate);
-
-        if (updateError) {
-          console.error(
-            "Error marking messages as read in Supabase:",
-            updateError
-          );
-          return;
-        }
-        console.log(
-          `Marked ${messageIdsToUpdate.length} messages as read for user ${selectedUser.id}`
-        );
-
-        // Update local state (conversations)
-        setConversations((prevConversations) => {
-          const newConvo = { ...prevConversations[selectedUser.id] };
-          newConvo.messages = newConvo.messages.map((msg) =>
-            msg.fromMe === false && msg.leido === false
-              ? { ...msg, leido: true }
-              : msg
-          );
-          return {
-            ...prevConversations,
-            [selectedUser.id]: newConvo,
-          };
-        });
-
-        // Update local state (users) to clear unread count
-        setUsers((prevUsers) =>
-          prevUsers.map((user) =>
-            user.id === selectedUser.id ? { ...user, unreadCount: 0 } : user
-          )
-        );
-      } catch (error) {
-        console.error("Error in markMessagesAsRead:", error);
-      }
-    };
-
-    // Only run if a user is selected and has unread messages
-    // The condition `selectedUser.unreadCount > 0` ensures we only try to mark as read if there are actual unread messages
-    if (selectedUser && selectedUser.unreadCount > 0) {
-      markMessagesAsRead();
+    } catch (supabaseError) {
+      console.error("Error al interactuar con Supabase:", supabaseError);
     }
-  }, [selectedUser, conversations]); // Re-run if selectedUser changes or new messages arrive in the current convo
+  };
+
+  const handleUnpauseChat = async () => {
+    if (!selectedUser) return;
+
+    try {
+      const recordId = selectedUser.id_supabase;
+
+      if (!recordId) {
+        console.warn(
+          `No se encontró id_supabase (session_id) para el usuario seleccionado: ${selectedUser.id}. No se puede despausar.`
+        );
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .update({ pause: false })
+        .eq("session_id", recordId);
+
+      if (error) {
+        throw new Error(
+          `Error al actualizar registro en Supabase: ${error.message}`
+        );
+      }
+
+      console.log(
+        "Atributo 'pause' actualizado a false en Supabase para el record (session_id):",
+        recordId
+      );
+    } catch (supabaseError) {
+      console.error("Error al interactuar con Supabase:", supabaseError);
+    }
+  };
+
+  const markMessagesAsRead = useCallback(async () => {
+    const currentSelectedUser = selectedUserRef.current;
+    const currentConversations = conversationsRef.current;
+
+    if (!currentSelectedUser || !currentConversations[currentSelectedUser.id]) {
+      console.log(
+        "[markMessagesAsRead] No selected user or conversations for selected user."
+      );
+      return;
+    }
+
+    const messagesToMarkRead = currentConversations[
+      currentSelectedUser.id
+    ].messages.filter((msg) => !msg.fromMe && msg.leido === false);
+
+    console.log(
+      `[markMessagesAsRead] Encontrados ${messagesToMarkRead.length} mensajes para marcar como leídos para la sesión ${currentSelectedUser.id}`
+    );
+
+    if (messagesToMarkRead.length === 0) {
+      return;
+    }
+
+    const messageIdsToUpdate = messagesToMarkRead.map((msg) => msg.id);
+    if (messageIdsToUpdate.length === 0) return;
+
+    try {
+      console.log(
+        `[markMessagesAsRead] Actualizando mensajes con IDs: ${messageIdsToUpdate.join(
+          ", "
+        )} a leido: true`
+      );
+      const { error: updateError } = await supabase
+        .from("chatlog")
+        .update({ leido: true })
+        .in("id", messageIdsToUpdate);
+
+      if (updateError) {
+        console.error(
+          "[markMessagesAsRead] Error al marcar mensajes como leídos en Supabase:",
+          updateError
+        );
+        return;
+      }
+      console.log(
+        `[markMessagesAsRead] Envío exitoso de actualización a Supabase para ${messageIdsToUpdate.length} mensajes para el usuario ${currentSelectedUser.id}`
+      );
+    } catch (error) {
+      console.error("[markMessagesAsRead] Error en markMessagesAsRead:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedUser && selectedUser.unreadCount > 0) {
+      console.log(
+        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount > 0 (${selectedUser.unreadCount}). Llamando a markMessagesAsRead.`
+      );
+      markMessagesAsRead();
+    } else if (selectedUser) {
+      console.log(
+        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount de 0. No se necesita acción.`
+      );
+    }
+  }, [selectedUser, conversations, markMessagesAsRead]);
 
   const currentMessages = selectedUser
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
-  const handleSend = async () => {
-    // La validación de newMessage.trim() se mantiene para evitar enviar mensajes vacíos
-    if (!newMessage.trim() || !selectedUser) return;
+  // --- Funciones para manejar la carga de imágenes ---
+  const handleImageSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedImage(file);
+      setImagePreviewUrl(URL.createObjectURL(file));
+    }
+  };
 
-    // La capacidad de enviar mensajes NO está ligada al estado de pausa aquí,
-    // solo a la regla de las 24 horas (ver isInputDisabled)
+  const clearImageSelection = () => {
+    setSelectedImage(null);
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl); // Liberar el objeto URL
+      setImagePreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""; // Limpiar el input de archivo
+    }
+  };
+
+  const uploadImageToSupabase = async (file) => {
+    if (!selectedUser) {
+      throw new Error("No hay usuario seleccionado para adjuntar la imagen.");
+    }
+
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 15)}.${fileExt}`;
+    // Guardar en una carpeta por session_id
+    const filePath = `${selectedUser.id}/${fileName}`;
+
+    console.log(`Subiendo imagen a: ${SUPABASE_STORAGE_BUCKET}/${filePath}`);
+
+    const { data, error } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      console.error("Error al subir imagen a Supabase Storage:", error);
+      throw error;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .getPublicUrl(filePath);
+
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error("No se pudo obtener la URL pública de la imagen.");
+    }
+
+    console.log("Imagen subida exitosamente. URL:", publicUrlData.publicUrl);
+    return publicUrlData.publicUrl;
+  };
+
+  const handleSend = async () => {
+    if (!selectedUser || (!newMessage.trim() && !selectedImage)) return;
+
     if (!isFreeFormMessageAllowedBy24HourRule()) {
       console.warn(
         "No se puede enviar el mensaje: el último mensaje del usuario tiene más de 24 horas."
       );
-      // Opcional: mostrar un toast o alerta al usuario si intenta enviar
       return;
     }
 
     const now = new Date();
-    const formattedTime = now.toLocaleString("es-MX", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    let messageContent = newMessage;
+    let imageUrlToSend = null;
 
-    const messageToSend = {
-      fromMe: true,
-      text: newMessage,
-      time: formattedTime,
-      createdAt: now,
-    };
-
-    setConversations((prevConversations) => ({
-      ...prevConversations,
-      [selectedUser.id]: {
-        ...prevConversations[selectedUser.id],
-        messages: [
-          ...(prevConversations[selectedUser.id]?.messages || []),
-          messageToSend,
-        ],
-      },
-    }));
     setNewMessage("");
     setSendingMessage(true);
 
     try {
+      if (selectedImage) {
+        imageUrlToSend = await uploadImageToSupabase(selectedImage);
+        messageContent = imageUrlToSend; // Si hay imagen, el contenido principal es la URL de la imagen
+        clearImageSelection(); // Limpiar previsualización después de subir
+      }
+
+      const payload = {
+        recipientId: selectedUser.id,
+        message: messageContent,
+        // Si quieres enviar texto y URL de imagen por separado al backend, podrías hacer:
+        // message: newMessage.trim() ? newMessage : undefined,
+        // imageUrl: imageUrlToSend,
+      };
+
       const res = await fetch("/api/send-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipientId: selectedUser.id,
-          message: messageToSend.text,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -533,7 +816,7 @@ const ChatWindow = () => {
           {
             session_id: selectedUser.id,
             role: "assistant",
-            content: messageToSend.text,
+            content: messageContent, // Guardar la URL de la imagen o el texto
             created_at: now.toISOString(),
             canal: conversations[selectedUser.id]?.canal || "desconocido",
             leido: true,
@@ -542,46 +825,22 @@ const ChatWindow = () => {
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
+          // Opcional: revertir UI si falla el guardado en DB
+          if (!selectedImage) setNewMessage(messageContent);
         } else {
-          console.log("Mensaje guardado en Supabase:", data);
+          console.log("Mensaje/Imagen guardado en Supabase:", data);
         }
-
-        setUsers((prevUsers) => {
-          const updatedUser = {
-            ...selectedUser,
-            lastCreatedAt: now,
-            unreadCount: 0, // MODIFIED: Clear unread count when agent sends a message
-          };
-          const otherUsers = prevUsers.filter((u) => u.id !== selectedUser.id);
-          return [updatedUser, ...otherUsers].sort(
-            (a, b) => b.lastCreatedAt - a.lastCreatedAt
-          );
-        });
       } else {
         console.error(
           "Error al enviar mensaje a la API. Revirtiendo UI.",
           res.status,
           await res.text()
         );
-        setConversations((prevConversations) => ({
-          ...prevConversations,
-          [selectedUser.id]: {
-            ...prevConversations[selectedUser.id],
-            messages: prevConversations[selectedUser.id].messages.slice(0, -1),
-          },
-        }));
-        setNewMessage(messageToSend.text);
+        if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
       }
     } catch (err) {
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
-      setConversations((prevConversations) => ({
-        ...prevConversations,
-        [selectedUser.id]: {
-          ...prevConversations[selectedUser.id],
-          messages: prevConversations[selectedUser.id].messages.slice(0, -1),
-        },
-      }));
-      setNewMessage(messageToSend.text);
+      if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
     } finally {
       setSendingMessage(false);
     }
@@ -594,10 +853,14 @@ const ChatWindow = () => {
     scrollToBottom();
   }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]);
 
+  console.log("Current users state:", users);
+
   const filteredUsers = users.filter((user) => {
-    const matchesName = user.name
+    const userName = String(user.name || "");
+    const matchesName = userName
       .toLowerCase()
       .includes(searchTerm.toLowerCase());
+
     const canal = conversations[user.id]?.canal || "desconocido";
     const matchesChannel = channelFilter === "todos" || canal === channelFilter;
 
@@ -609,10 +872,13 @@ const ChatWindow = () => {
     return matchesName && matchesChannel && matchesTemperature;
   });
 
-  // Nueva función para verificar la regla de las 24 horas (independiente del estado de pausa)
+  console.log(
+    "Usuarios filtrados para renderizar (filteredUsers):",
+    filteredUsers
+  );
+
   const isFreeFormMessageAllowedBy24HourRule = () => {
     if (!selectedUser || !conversations[selectedUser.id]) {
-      // Si no hay usuario seleccionado o datos de conversación, asumimos que se puede enviar
       return true;
     }
 
@@ -620,10 +886,9 @@ const ChatWindow = () => {
     const lastUserMsg = messages
       .slice()
       .reverse()
-      .find((msg) => !msg.fromMe); // Buscar el último mensaje del usuario
+      .find((msg) => !msg.fromMe);
 
     if (!lastUserMsg) {
-      // Si no hay mensajes del usuario, asumimos que se puede enviar libremente
       return true;
     }
 
@@ -643,11 +908,11 @@ const ChatWindow = () => {
     return timeDifference < twentyFourHoursInMs;
   };
 
-  // La entrada está deshabilitada solo si no hay usuario, se está enviando un mensaje,
-  // o si la regla de las 24 horas impide el envío de mensajes libres.
-  // El estado de pausa NO inhabilita el input.
   const isInputDisabled =
-    !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
+    !selectedUser ||
+    sendingMessage ||
+    (!newMessage.trim() && !selectedImage) || // Deshabilitar si no hay texto ni imagen
+    !isFreeFormMessageAllowedBy24HourRule();
 
   console.log(
     `Render: selectedUser: ${
@@ -757,33 +1022,48 @@ const ChatWindow = () => {
               const lastMsg =
                 userConvo?.messages?.[userConvo.messages.length - 1];
               const canal = userConvo?.canal;
+
+              const isSelected = user.id === selectedUser?.id;
+
               return (
-                <ListItem
+                <ListItemButton
                   key={user.id}
-                  button
-                  selected={user.id === selectedUser?.id}
+                  selected={isSelected}
                   onClick={() => setSelectedUser(user)}
                   sx={{
-                    "&.Mui-selected": {
-                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
-                      borderRadius: 2,
-                      mx: 1,
-                      color: "white",
-                    },
-                    // MODIFIED: Conditional background for unread messages
-                    bgcolor: user.unreadCount > 0 ? "#e0f2f1" : "inherit",
                     mx: 1,
                     borderRadius: 2,
                     minHeight: 72,
-                    "&.Mui-selected, &.Mui-selected:hover": {
-                      background: "linear-gradient(90deg, #6a0dad, #a64aff)",
-                      color: "white",
-                    },
+                    transition:
+                      "background-color 0.3s ease, color 0.3s ease, border-left-color 0.3s ease",
+                    borderLeft: "4px solid transparent",
+                    paddingLeft: (theme) => theme.spacing(2),
+
+                    bgcolor:
+                      user.unreadCount > 0
+                        ? "rgba(37, 211, 102, 0.05)"
+                        : "inherit",
+                    color: "text.primary",
+
                     "&:hover": {
                       bgcolor:
                         user.unreadCount > 0
-                          ? "#c8e6e3"
+                          ? "rgba(37, 211, 102, 0.1)"
                           : "rgba(0, 0, 0, 0.04)",
+                      color: "text.primary",
+                    },
+
+                    "&.Mui-selected": {
+                      bgcolor: "#e7f3ff",
+                      color: "text.primary",
+                      borderLeft: "4px solid #1976d2",
+                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
+                    },
+                    "&.Mui-selected:hover": {
+                      bgcolor: "#d7e3f7",
+                      color: "text.primary",
+                      borderLeft: "4px solid #1976d2",
+                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
                     },
                   }}
                 >
@@ -804,7 +1084,7 @@ const ChatWindow = () => {
                           component="span"
                           variant="body1"
                           sx={{
-                            fontWeight: user.unreadCount > 0 ? "700" : "600", // Bold for unread
+                            fontWeight: user.unreadCount > 0 ? "700" : "600",
                             color: "inherit",
                             display: "flex",
                             alignItems: "center",
@@ -817,19 +1097,18 @@ const ChatWindow = () => {
                               sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
                             />
                           )}
-                          {/* MODIFIED: Badge for unread count */}
                           {user.unreadCount > 0 && (
                             <Box
                               sx={{
-                                bgcolor: "#25D366", // WhatsApp green
+                                bgcolor: "#25D366",
                                 color: "white",
-                                borderRadius: "12px", // Pill shape
+                                borderRadius: "12px",
                                 px: 1,
                                 py: 0.2,
                                 fontSize: "0.75rem",
                                 fontWeight: "bold",
                                 ml: 1,
-                                minWidth: "24px", // Ensure it's wide enough for single digit
+                                minWidth: "24px",
                                 textAlign: "center",
                                 flexShrink: 0,
                               }}
@@ -873,10 +1152,12 @@ const ChatWindow = () => {
                               whiteSpace: "nowrap",
                               flexGrow: 1,
                               fontWeight:
-                                user.unreadCount > 0 ? "600" : "normal", // Bold for unread
+                                user.unreadCount > 0 ? "600" : "normal",
                             }}
                           >
-                            {lastMsg.text}
+                            {isImageUrl(lastMsg.text)
+                              ? "🖼️ Imagen"
+                              : lastMsg.text}
                           </Typography>
                           {canal && getChannelIcon(canal, 14)}
                           {user.temperatura &&
@@ -887,7 +1168,7 @@ const ChatWindow = () => {
                       )
                     }
                   />
-                </ListItem>
+                </ListItemButton>
               );
             })}
           </List>
@@ -949,7 +1230,21 @@ const ChatWindow = () => {
                     maxWidth: "70%",
                   }}
                 >
-                  <Typography variant="body2">{msg.text}</Typography>
+                  {isImageUrl(msg.text) ? (
+                    <img
+                      src={msg.text}
+                      alt="Imagen adjunta"
+                      style={{ maxWidth: "100%", borderRadius: "8px" }}
+                    />
+                  ) : (
+                    <Typography
+                      variant="body2"
+                      // MODIFICACIÓN CLAVE AQUÍ: (msg.text || "") asegura que msg.text es una cadena.
+                      dangerouslySetInnerHTML={{
+                        __html: (msg.text || "").replace(/\n/g, "<br />"),
+                      }}
+                    />
+                  )}
                   <Typography
                     variant="caption"
                     display="block"
@@ -997,7 +1292,72 @@ const ChatWindow = () => {
               </Typography>
             )}
 
+            {/* Previsualización de imagen */}
+            {imagePreviewUrl && (
+              <Box
+                sx={{
+                  mb: 2,
+                  p: 1,
+                  border: "1px solid #ddd",
+                  borderRadius: 2,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  position: "relative",
+                  maxWidth: "300px", // Limitar el tamaño de la previsualización
+                  mx: "auto",
+                }}
+              >
+                <img
+                  src={imagePreviewUrl}
+                  alt="Previsualización"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "150px",
+                    borderRadius: "4px",
+                  }}
+                />
+                <IconButton
+                  size="small"
+                  onClick={clearImageSelection}
+                  sx={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    bgcolor: "rgba(255,255,255,0.7)",
+                    "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
+                  }}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
+
             <Box sx={{ display: "flex", width: "100%" }}>
+              {/* Input de archivo oculto */}
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                onChange={handleImageSelect}
+                disabled={
+                  !selectedUser || !isFreeFormMessageAllowedBy24HourRule()
+                }
+              />
+              {/* Botón para adjuntar imágenes */}
+              <IconButton
+                onClick={() => fileInputRef.current?.click()}
+                size="small"
+                disabled={
+                  !selectedUser ||
+                  sendingMessage ||
+                  !isFreeFormMessageAllowedBy24HourRule()
+                }
+                style={{ marginRight: "1rem" }}
+              >
+                <AttachFileIcon />
+              </IconButton>
+
               <TextField
                 fullWidth
                 variant="outlined"
@@ -1005,13 +1365,13 @@ const ChatWindow = () => {
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
+                disabled={isInputDisabled}
                 sx={{ borderRadius: 2 }}
               />
               <IconButton
                 onClick={handleSend}
                 size="small"
-                disabled={isInputDisabled} // Ahora solo depende de la regla de 24h, sendingMessage y selectedUser
+                disabled={isInputDisabled}
                 style={{ marginLeft: "1rem" }}
               >
                 <SendIcon />
