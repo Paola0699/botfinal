@@ -41,7 +41,7 @@ import AttachFileIcon from "@mui/icons-material/AttachFile"; // Icono para adjun
 import CloseIcon from "@mui/icons-material/Close"; // Icono para cerrar previsualización
 
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
-const SUPABASE_STORAGE_BUCKET = "chat-images"; // Nombre del bucket de Supabase Storage
+const SUPABASE_STORAGE_BUCKET = "imgs_chats"; // Nombre del bucket de Supabase Storage
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
