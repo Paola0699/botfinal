@@ -15,11 +15,10 @@ import AddIcon from "@mui/icons-material/Add";
 import FilterListIcon from "@mui/icons-material/FilterList";
 import SortIcon from "@mui/icons-material/Sort";
 import { useEffect, useRef, useState } from "react";
-import LeadsColumn from "../leads/LeadsColumn";
+import LeadsColumn from "../leads/LeadsColumn"; // Asegúrate de que la ruta sea correcta
+import supabase from "../supabaseClient"; // Importa tu cliente de Supabase
 
-const API_KEY = import.meta.env.VITE_API_KEY;
-const BASE_ID = import.meta.env.VITE_BASE_ID;
-const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME; // VITE_TABLE_NAME=chat_crm
 
 const Leads = () => {
   const [usersList, setUsersList] = useState([]);
@@ -39,23 +38,18 @@ const Leads = () => {
     if (hasFetched.current) return;
     hasFetched.current = true;
 
-    const fetchAirtableRecords = async () => {
+    const fetchSupabaseRecords = async () => {
       setLoading(true);
       try {
-        const response = await fetch(
-          `https://api.airtable.com/v0/${BASE_ID}/${TABLE_NAME}`,
-          {
-            headers: {
-              Authorization: `Bearer ${API_KEY}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        const { data, error } = await supabase.from(TABLE_NAME).select("*");
 
-        if (!response.ok) throw new Error("Error al obtener leads");
+        if (error) {
+          throw new Error(
+            `Error al obtener leads de Supabase: ${error.message}`
+          );
+        }
 
-        const data = await response.json();
-        setUsersList(data.records);
+        setUsersList(data);
       } catch (error) {
         console.error("Error al obtener leads:", error);
       } finally {
@@ -63,35 +57,60 @@ const Leads = () => {
       }
     };
 
-    fetchAirtableRecords();
+    fetchSupabaseRecords();
   }, []);
 
   // Clasificar leads
   const leadsClasificados = { frio: [], tibio: [], caliente: [] };
 
   usersList.forEach((record) => {
-    const fields = record.fields;
-    const temperatura = fields.temperatura || "";
+    const temperatura = record.temperatura || "";
     const nombre =
-      fields.nombre || fields.username || record.id || "Sin nombre";
-    const telefono = fields.telefono || "";
-    const ultimoMensaje = fields["created date"] || record.createdTime || "";
-    const tag = fields.tag || "";
-    const profilePic = fields["profile pic"] || null;
-    // NUEVO: Extraer el campo 'canal'
-    const canal = fields.canal ? fields.canal.toLowerCase() : ""; // Convertir a minúsculas para facilitar la comparación
+      record.nombre || record.username || record.session_id || "Sin nombre";
+    const telefono = record.telefono || "";
 
-    let flagColor = "#FFC107"; // Default to yellow as seen in mockup for Alexander Patel
+    // --- CAMBIO AQUÍ: Formatear la fecha ---
+    let ultimoMensaje = "";
+    if (record.created_at) {
+      try {
+        const date = new Date(record.created_at);
+        ultimoMensaje = date.toLocaleString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      } catch (e) {
+        console.error(
+          "Error al parsear la fecha de ultimoMensaje:",
+          record.created_at,
+          e
+        );
+        ultimoMensaje = "Fecha inválida"; // Fallback en caso de error
+      }
+    }
+    // --- FIN DEL CAMBIO ---
 
-    if (temperatura.includes("Frío")) {
-      flagColor = "#FF69B4"; // Pink
-    } else if (temperatura.includes("Tibio")) {
-      flagColor = "#4CAF50"; // Green
-    } else if (temperatura.includes("Caliente")) {
-      flagColor = "#F44336"; // Red
+    const tag = record.tag || "";
+    const profilePic = record.profile_pic || null;
+    const canal = record.canal ? record.canal.toLowerCase() : "";
+
+    let flagColor = "#FFC107"; // Default a amarillo
+
+    const normalizedTemperatura = temperatura
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (normalizedTemperatura.includes("frío")) {
+      flagColor = "#FF69B4"; // Rosa
+    } else if (normalizedTemperatura.includes("tibio")) {
+      flagColor = "#4CAF50"; // Verde
+    } else if (normalizedTemperatura.includes("caliente")) {
+      flagColor = "#F44336"; // Rojo
     }
 
-    // NUEVO: Pasar 'canal' al objeto leadData
     const leadData = {
       nombre,
       telefono,
@@ -102,11 +121,11 @@ const Leads = () => {
       canal,
     };
 
-    if (temperatura.includes("Frío")) {
+    if (normalizedTemperatura.includes("frío")) {
       leadsClasificados.frio.push(leadData);
-    } else if (temperatura.includes("Tibio")) {
+    } else if (normalizedTemperatura.includes("tibio")) {
       leadsClasificados.tibio.push(leadData);
-    } else if (temperatura.includes("Caliente")) {
+    } else if (normalizedTemperatura.includes("caliente")) {
       leadsClasificados.caliente.push(leadData);
     } else {
       leadsClasificados.frio.push(leadData);
