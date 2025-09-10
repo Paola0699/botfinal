@@ -731,16 +731,13 @@ const ChatWindow = () => {
     try {
       if (selectedImage) {
         imageUrlToSend = await uploadImageToSupabase(selectedImage);
-        messageContent = imageUrlToSend; // Si hay imagen, el contenido principal es la URL de la imagen
         clearImageSelection(); // Limpiar previsualización después de subir
       }
 
       const payload = {
         recipientId: selectedUser.id,
-        message: messageContent,
-        // Si quieres enviar texto y URL de imagen por separado al backend, podrías hacer:
-        // message: newMessage.trim() ? newMessage : undefined,
-        // imageUrl: imageUrlToSend,
+        message: newMessage.trim() || null, // texto opcional
+        imageUrl: imageUrlToSend, // imagen opcional
       };
 
       const res = await fetch("/api/send-message", {
@@ -754,7 +751,7 @@ const ChatWindow = () => {
           {
             session_id: selectedUser.id,
             role: "assistant",
-            content: messageContent, // Guardar la URL de la imagen o el texto
+            content: imageUrlToSend || messageContent, // guarda lo que se mandó
             created_at: now.toISOString(),
             canal: conversations[selectedUser.id]?.canal || "desconocido",
             leido: true,
@@ -763,9 +760,7 @@ const ChatWindow = () => {
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
-          // Opcional: revertir UI si falla el guardado en DB
           if (!selectedImage) setNewMessage(messageContent);
-        } else {
         }
       } else {
         console.error(
@@ -773,11 +768,11 @@ const ChatWindow = () => {
           res.status,
           await res.text()
         );
-        if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
+        if (!selectedImage) setNewMessage(messageContent);
       }
     } catch (err) {
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
-      if (!selectedImage) setNewMessage(messageContent); // Revertir solo si era un mensaje de texto
+      if (!selectedImage) setNewMessage(messageContent);
     } finally {
       setSendingMessage(false);
     }
@@ -839,10 +834,7 @@ const ChatWindow = () => {
   };
 
   const isInputDisabled =
-    !selectedUser ||
-    sendingMessage ||
-    selectedImage ||
-    !isFreeFormMessageAllowedBy24HourRule();
+    !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
 
   if (loading) {
     return (
