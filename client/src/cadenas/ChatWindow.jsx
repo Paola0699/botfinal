@@ -834,8 +834,15 @@ const ChatWindow = () => {
   };
 
   const isInputDisabled =
-    !selectedUser || sendingMessage || !isFreeFormMessageAllowedBy24HourRule();
+    !selectedUser ||
+    sendingMessage ||
+    !isFreeFormMessageAllowedBy24HourRule() ||
+    !!selectedImage;
 
+  const isButtonDisabled =
+    !selectedUser || sendingMessage || (!newMessage.trim() && !selectedImage);
+
+  console.log(selectedImage);
   if (loading) {
     return (
       <Box
@@ -1287,7 +1294,7 @@ const ChatWindow = () => {
               <IconButton
                 onClick={handleSend}
                 size="small"
-                disabled={isInputDisabled}
+                disabled={isButtonDisabled}
                 style={{ marginLeft: "1rem" }}
               >
                 <SendIcon />

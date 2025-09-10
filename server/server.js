@@ -75,19 +75,17 @@ app.post("/api/send-message", async (req, res) => {
         },
       };
     }
-
     const fbRes = await fetch(
       "https://graph.facebook.com/v22.0/734180689784697/messages",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer EAALVZCVOXajwBPD0l7lQweezStIsZBLiznoEkO7mmYZCrzzMwOAkODaFClc7XXXGGBb4l0jcK3Jf8GlhZApiCRT15R30cC9ZApH0EIEfeYZC1vAIVZCCC2ZAqwWKq1KcXnwLvy4F7d1x5AQLGrZAQ0brZCvbiZCslTdiKXD5IZClsXYxRAufMubXMBO1EOrP6sGdlgZDZD`, // ⚠️ pásalo a .env
+          Authorization: `Bearer ${FB_BEARER_TOKEN}`,
         },
         body: JSON.stringify(payload),
       }
     );
-
     const data = await fbRes.json();
     console.log(data);
 
