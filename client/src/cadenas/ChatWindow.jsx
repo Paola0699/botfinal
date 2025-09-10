@@ -320,12 +320,6 @@ const ChatWindow = () => {
         leido: newRecord.leido,
       };
 
-      console.log(
-        `[RT-INSERT] Nuevo mensaje para sesión ${newRecord.session_id}. Rol: ${
-          newRecord.role
-        }, Contenido: ${newRecord.content?.substring(0, 30)}...` // Usar ?. para evitar error si content es null
-      );
-
       setConversations((prevConversations) => {
         const updatedConversations = { ...prevConversations };
         if (!updatedConversations[sessionId]) {
@@ -402,10 +396,6 @@ const ChatWindow = () => {
       const sessionId = newRecord.session_id;
       const messageId = newRecord.id;
 
-      console.log(
-        `[RT-UPDATE] Mensaje ID ${messageId} para sesión ${sessionId}. Leído anterior: ${oldRecord.leido}, Nuevo leído: ${newRecord.leido}`
-      );
-
       let currentSessionMessagesAfterUpdate = [];
       setConversations((prevConversations) => {
         const updatedConversations = { ...prevConversations };
@@ -434,18 +424,11 @@ const ChatWindow = () => {
         }
       });
 
-      console.log(
-        `[RT-UPDATE] Recalculado el conteo de no leídos para la sesión ${sessionId}: ${newUnreadCountForSession}`
-      );
-
       setUsers((prevUsers) => {
         const updatedUsers = prevUsers.map((user) =>
           user.id === sessionId
             ? { ...user, unreadCount: newUnreadCountForSession }
             : user
-        );
-        console.log(
-          `[RT-UPDATE] Estado de usuarios actualizado para la sesión ${sessionId}. Nuevo unreadCount: ${newUnreadCountForSession}`
         );
         return updatedUsers;
       });
@@ -457,7 +440,6 @@ const ChatWindow = () => {
 
   useEffect(() => {
     const setupInitialDataAndSubscriptions = async () => {
-      console.log("--- setupInitialDataAndSubscriptions iniciando ---");
       setLoading(true);
 
       try {
@@ -503,7 +485,6 @@ const ChatWindow = () => {
         processChatlogData(chatlogData, profiles);
 
         if (!crmChannelRef.current) {
-          console.log("Suscribiendo al canal de crm...");
           crmChannelRef.current = supabase
             .channel("crm_profile_changes")
             .on(
@@ -515,7 +496,6 @@ const ChatWindow = () => {
         }
 
         if (!chatlogChannelRef.current) {
-          console.log("Suscribiendo al canal de chatlog...");
           chatlogChannelRef.current = supabase
             .channel("chat_log_changes")
             .on(
@@ -527,7 +507,6 @@ const ChatWindow = () => {
         }
 
         setLoading(false);
-        console.log("--- setupInitialDataAndSubscriptions finalizado ---");
       } catch (error) {
         console.error("Error en setupInitialDataAndSubscriptions:", error);
         setLoading(false);
@@ -537,7 +516,6 @@ const ChatWindow = () => {
     setupInitialDataAndSubscriptions();
 
     return () => {
-      console.log("Desuscribiendo todos los canales...");
       if (crmChannelRef.current) {
         supabase.removeChannel(crmChannelRef.current);
         crmChannelRef.current = null;
@@ -557,7 +535,6 @@ const ChatWindow = () => {
     if (!loading && users.length > 0) {
       if (!selectedUser || !users.some((u) => u.id === selectedUser.id)) {
         setSelectedUser(users[0]);
-        console.log("Usuario seleccionado inicialmente:", users[0]);
       } else {
         const currentSelectedUserUpdated = users.find(
           (u) => u.id === selectedUser.id
@@ -568,15 +545,10 @@ const ChatWindow = () => {
             currentSelectedUserUpdated.unreadCount !== selectedUser.unreadCount)
         ) {
           setSelectedUser(currentSelectedUserUpdated);
-          console.log(
-            "Usuario seleccionado actualizado:",
-            currentSelectedUserUpdated
-          );
         }
       }
     } else if (!loading && users.length === 0) {
       setSelectedUser(null);
-      console.log("No hay usuarios, selectedUser establecido a null.");
     }
   }, [loading, users, selectedUser]);
 
@@ -603,11 +575,6 @@ const ChatWindow = () => {
           `Error al actualizar registro en Supabase: ${error.message}`
         );
       }
-
-      console.log(
-        "Atributo 'pause' actualizado a true en Supabase para el record (session_id):",
-        recordId
-      );
     } catch (supabaseError) {
       console.error("Error al interactuar con Supabase:", supabaseError);
     }
@@ -636,11 +603,6 @@ const ChatWindow = () => {
           `Error al actualizar registro en Supabase: ${error.message}`
         );
       }
-
-      console.log(
-        "Atributo 'pause' actualizado a false en Supabase para el record (session_id):",
-        recordId
-      );
     } catch (supabaseError) {
       console.error("Error al interactuar con Supabase:", supabaseError);
     }
@@ -651,19 +613,12 @@ const ChatWindow = () => {
     const currentConversations = conversationsRef.current;
 
     if (!currentSelectedUser || !currentConversations[currentSelectedUser.id]) {
-      console.log(
-        "[markMessagesAsRead] No selected user or conversations for selected user."
-      );
       return;
     }
 
     const messagesToMarkRead = currentConversations[
       currentSelectedUser.id
     ].messages.filter((msg) => !msg.fromMe && msg.leido === false);
-
-    console.log(
-      `[markMessagesAsRead] Encontrados ${messagesToMarkRead.length} mensajes para marcar como leídos para la sesión ${currentSelectedUser.id}`
-    );
 
     if (messagesToMarkRead.length === 0) {
       return;
@@ -673,11 +628,6 @@ const ChatWindow = () => {
     if (messageIdsToUpdate.length === 0) return;
 
     try {
-      console.log(
-        `[markMessagesAsRead] Actualizando mensajes con IDs: ${messageIdsToUpdate.join(
-          ", "
-        )} a leido: true`
-      );
       const { error: updateError } = await supabase
         .from("chatlog")
         .update({ leido: true })
@@ -690,9 +640,6 @@ const ChatWindow = () => {
         );
         return;
       }
-      console.log(
-        `[markMessagesAsRead] Envío exitoso de actualización a Supabase para ${messageIdsToUpdate.length} mensajes para el usuario ${currentSelectedUser.id}`
-      );
     } catch (error) {
       console.error("[markMessagesAsRead] Error en markMessagesAsRead:", error);
     }
@@ -700,14 +647,8 @@ const ChatWindow = () => {
 
   useEffect(() => {
     if (selectedUser && selectedUser.unreadCount > 0) {
-      console.log(
-        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount > 0 (${selectedUser.unreadCount}). Llamando a markMessagesAsRead.`
-      );
       markMessagesAsRead();
     } else if (selectedUser) {
-      console.log(
-        `[markMessagesAsRead] El usuario seleccionado ${selectedUser.id} tiene unreadCount de 0. No se necesita acción.`
-      );
     }
   }, [selectedUser, conversations, markMessagesAsRead]);
 
@@ -747,8 +688,6 @@ const ChatWindow = () => {
     // Guardar en una carpeta por session_id
     const filePath = `${selectedUser.id}/${fileName}`;
 
-    console.log(`Subiendo imagen a: ${SUPABASE_STORAGE_BUCKET}/${filePath}`);
-
     const { data, error } = await supabase.storage
       .from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, file, {
@@ -769,7 +708,6 @@ const ChatWindow = () => {
       throw new Error("No se pudo obtener la URL pública de la imagen.");
     }
 
-    console.log("Imagen subida exitosamente. URL:", publicUrlData.publicUrl);
     return publicUrlData.publicUrl;
   };
 
@@ -828,7 +766,6 @@ const ChatWindow = () => {
           // Opcional: revertir UI si falla el guardado en DB
           if (!selectedImage) setNewMessage(messageContent);
         } else {
-          console.log("Mensaje/Imagen guardado en Supabase:", data);
         }
       } else {
         console.error(
@@ -853,8 +790,6 @@ const ChatWindow = () => {
     scrollToBottom();
   }, [selectedUser, conversations[selectedUser?.id]?.messages?.length]);
 
-  console.log("Current users state:", users);
-
   const filteredUsers = users.filter((user) => {
     const userName = String(user.name || "");
     const matchesName = userName
@@ -871,11 +806,6 @@ const ChatWindow = () => {
 
     return matchesName && matchesChannel && matchesTemperature;
   });
-
-  console.log(
-    "Usuarios filtrados para renderizar (filteredUsers):",
-    filteredUsers
-  );
 
   const isFreeFormMessageAllowedBy24HourRule = () => {
     if (!selectedUser || !conversations[selectedUser.id]) {
@@ -911,14 +841,8 @@ const ChatWindow = () => {
   const isInputDisabled =
     !selectedUser ||
     sendingMessage ||
-    (!newMessage.trim() && !selectedImage) || // Deshabilitar si no hay texto ni imagen
+    selectedImage ||
     !isFreeFormMessageAllowedBy24HourRule();
-
-  console.log(
-    `Render: selectedUser: ${
-      selectedUser?.id
-    }, isFreeFormMessageAllowedBy24HourRule: ${isFreeFormMessageAllowedBy24HourRule()}, isInputDisabled: ${isInputDisabled}`
-  );
 
   if (loading) {
     return (
