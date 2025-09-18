@@ -50,24 +50,24 @@ const NavBar = (props) => {
       path: "/contactos",
       icon: <ContactsIcon />,
     },
-    /*     {
+    /*  {
       title: "Cadenas Masivas",
       id: "cadenas_masivas",
       path: "/cadenas_masivas",
       icon: <HubIcon />,
-    },
-    {
+    }, */
+    /*  {
       title: "Training",
       id: "training",
       path: "/training",
       icon: <FitnessCenterIcon />,
-    },
+    }, */
     {
       title: "Plantillas",
       id: "plantillas",
       path: "/plantillas",
       icon: <ArticleIcon />,
-    }, */
+    },
   ];
 
   const handleDrawerTransitionEnd = () => {

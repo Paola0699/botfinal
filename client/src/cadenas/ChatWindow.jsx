@@ -98,7 +98,6 @@ const getTemperatureIcon = (temperatureInternal, size = 16) => {
 
 // Función auxiliar para verificar si una cadena es una URL de imagen
 const isImageUrl = (url) => {
-  // Asegurarse de que 'url' es una cadena antes de intentar métodos de cadena
   return (
     typeof url === "string" &&
     (url.endsWith(".jpg") ||
@@ -106,6 +105,17 @@ const isImageUrl = (url) => {
       url.endsWith(".png") ||
       url.endsWith(".gif") ||
       url.endsWith(".webp"))
+  );
+};
+
+const isAudioUrl = (url) => {
+  return (
+    typeof url === "string" &&
+    (url.endsWith(".mp3") ||
+      url.endsWith(".m4a") ||
+      url.endsWith(".wav") ||
+      url.endsWith(".ogg") ||
+      url.endsWith(".mp4"))
   );
 };
 
@@ -1080,6 +1090,8 @@ const ChatWindow = () => {
                           >
                             {isImageUrl(lastMsg.text)
                               ? "🖼️ Imagen"
+                              : isAudioUrl(lastMsg.text)
+                              ? "🔊 Audio"
                               : lastMsg.text}
                           </Typography>
                           {canal && getChannelIcon(canal, 14)}
@@ -1159,10 +1171,30 @@ const ChatWindow = () => {
                       alt="Imagen adjunta"
                       style={{ maxWidth: "100%", borderRadius: "8px" }}
                     />
+                  ) : isAudioUrl(msg.text) ? (
+                    // Reproductor de audio nativo. Para mp4 funciona como audio si el navegador lo soporta.
+                    <Box
+                      sx={{ display: "flex", flexDirection: "column", gap: 1 }}
+                    >
+                      <audio
+                        controls
+                        preload="metadata"
+                        onLoadedMetadata={(e) =>
+                          console.log(
+                            "Duración detectada:",
+                            e.currentTarget.duration
+                          )
+                        }
+                      >
+                        <source src={msg.content} type="audio/mpeg" />
+                      </audio>
+                      <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                        🔊 audio adjunto
+                      </Typography>
+                    </Box>
                   ) : (
                     <Typography
                       variant="body2"
-                      // MODIFICACIÓN CLAVE AQUÍ: (msg.text || "") asegura que msg.text es una cadena.
                       dangerouslySetInnerHTML={{
                         __html: (msg.text || "").replace(/\n/g, "<br />"),
                       }}

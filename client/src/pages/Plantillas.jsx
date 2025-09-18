@@ -1,8 +1,6 @@
 import {
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   CircularProgress,
   Divider,
@@ -13,6 +11,12 @@ import {
   Select,
   Stack,
   Typography,
+  TableContainer, // Nuevo
+  Table, // Nuevo
+  TableHead, // Nuevo
+  TableBody, // Nuevo
+  TableRow, // Nuevo
+  TableCell, // Nuevo
 } from "@mui/material";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
@@ -20,6 +24,8 @@ import { Link } from "react-router-dom";
 
 // Define las categorías disponibles, incluyendo "TODOS"
 const categories = ["TODOS", "MARKETING", "MARKETING LITE", "UTILITY"];
+// Define los estados disponibles, incluyendo "TODOS"
+const statuses = ["TODOS", "APPROVED", "REJECTED", "PENDING"];
 
 // 🔹 Helper para mapear el status de Meta a colores
 const getStatusColor = (status) => {
@@ -65,10 +71,13 @@ const getCategoryColor = (category) => {
 const transformarTemplates = (templates) => {
   return templates.map((tpl) => ({
     nombre: tpl.name,
-    fechaCreacion: new Date(), // Meta no devuelve fecha, se usa ahora
+    // Nota: La API de Meta no devuelve la fecha de creación en el formato que esperas.
+    // Para propósitos de demostración, se usa la fecha actual.
+    // Si la API proporciona una fecha, deberías usarla aquí.
+    fechaCreacion: new Date(),
     status: tpl.status,
     language: tpl.language,
-    categoria: tpl.category, // Esta es la propiedad por la que filtraremos
+    categoria: tpl.category,
     id: tpl.id,
     header: tpl.components.find((c) => c.type === "HEADER")?.text || "",
     body: tpl.components.find((c) => c.type === "BODY")?.text || "",
@@ -76,9 +85,10 @@ const transformarTemplates = (templates) => {
 };
 
 const Plantillas = () => {
-  const [selectedCategory, setSelectedCategory] = useState(categories[0]); // Estado para la categoría seleccionada, inicializado en "TODOS"
-  const [allPlantillas, setAllPlantillas] = useState([]); // Almacena todas las plantillas obtenidas
-  const [filteredPlantillas, setFilteredPlantillas] = useState([]); // Almacena las plantillas después de aplicar el filtro
+  const [selectedCategory, setSelectedCategory] = useState(categories[0]);
+  const [selectedStatus, setSelectedStatus] = useState(statuses[0]);
+  const [allPlantillas, setAllPlantillas] = useState([]);
+  const [filteredPlantillas, setFilteredPlantillas] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchMessageTemplates = async () => {
@@ -95,40 +105,44 @@ const Plantillas = () => {
       }
 
       const data = await res.json();
-      return data; // 👈 Aquí vienen los templates desde Facebook
+      return data;
     } catch (error) {
       console.error("Error en fetchMessageTemplates:", error);
       return null;
     }
   };
 
-  // Efecto para cargar las plantillas inicialmente
   useEffect(() => {
     const loadTemplates = async () => {
-      setLoading(true); // Establece loading a true antes de la llamada a la API
+      setLoading(true);
       const data = await fetchMessageTemplates();
       if (data?.data) {
         const transformadas = transformarTemplates(data.data);
         setAllPlantillas(transformadas);
-        setFilteredPlantillas(transformadas); // Inicialmente, muestra todas las plantillas
       }
       setLoading(false);
     };
 
     loadTemplates();
-  }, []); // Se ejecuta solo una vez al montar el componente
+  }, []);
 
-  // Efecto para filtrar las plantillas cada vez que cambia la categoría seleccionada o la lista de todas las plantillas
   useEffect(() => {
-    if (selectedCategory === "TODOS") {
-      setFilteredPlantillas(allPlantillas);
-    } else {
-      const filtered = allPlantillas.filter(
+    let currentFiltered = allPlantillas;
+
+    if (selectedCategory !== "TODOS") {
+      currentFiltered = currentFiltered.filter(
         (plantilla) => plantilla.categoria === selectedCategory
       );
-      setFilteredPlantillas(filtered);
     }
-  }, [selectedCategory, allPlantillas]); // Dependencias para que el efecto se re-ejecute
+
+    if (selectedStatus !== "TODOS") {
+      currentFiltered = currentFiltered.filter(
+        (plantilla) => plantilla.status === selectedStatus
+      );
+    }
+
+    setFilteredPlantillas(currentFiltered);
+  }, [selectedCategory, selectedStatus, allPlantillas]);
 
   if (loading) {
     return (
@@ -168,21 +182,38 @@ const Plantillas = () => {
             alignItems="center"
             mb={3}
           >
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Filtrar por Categoría</InputLabel>{" "}
-              {/* Etiqueta actualizada */}
-              <Select
-                value={selectedCategory}
-                label="Filtrar por Categoría" // Etiqueta actualizada
-                onChange={(e) => setSelectedCategory(e.target.value)}
-              >
-                {categories.map((cat) => (
-                  <MenuItem key={cat} value={cat}>
-                    {cat}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Stack direction="row" spacing={2}>
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel>Filtrar por Categoría</InputLabel>
+                <Select
+                  value={selectedCategory}
+                  label="Filtrar por Categoría"
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                >
+                  {categories.map((cat) => (
+                    <MenuItem key={cat} value={cat}>
+                      {cat}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl size="small" sx={{ minWidth: 200 }}>
+                <InputLabel>Filtrar por Estado</InputLabel>
+                <Select
+                  value={selectedStatus}
+                  label="Filtrar por Estado"
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                >
+                  {statuses.map((status) => (
+                    <MenuItem key={status} value={status}>
+                      {status}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+
             <Link to={"/plantilla-nueva"}>
               <Button
                 variant="contained"
@@ -199,77 +230,79 @@ const Plantillas = () => {
           <Divider />
         </Paper>
 
-        <Stack spacing={2} mt={1}>
-          {filteredPlantillas.length > 0 ? (
-            filteredPlantillas.map((plantilla, index) => (
-              <Card
-                key={index}
-                sx={{
-                  borderRadius: 3,
-                  boxShadow: "0px 4px 12px rgba(0,0,0,0.08)",
-                  transition: "0.2s",
-                  "&:hover": {
-                    transform: "translateY(-4px)",
-                    boxShadow: "0px 6px 16px rgba(0,0,0,0.12)",
-                  },
-                }}
-              >
-                <CardContent>
-                  <Typography variant="subtitle1" fontWeight="600" gutterBottom>
-                    📄 {plantilla.nombre}
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mb: 1 }}
+        {filteredPlantillas.length > 0 ? (
+          <TableContainer component={Paper} sx={{ mt: 2 }}>
+            <Table sx={{ minWidth: 650 }} aria-label="lista de plantillas">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Nombre</TableCell>
+                  <TableCell>ID</TableCell>
+                  <TableCell>Fecha de Creación</TableCell>
+                  <TableCell>Categoría</TableCell>
+                  <TableCell>Estado</TableCell>
+                  <TableCell>Cuerpo del Mensaje</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredPlantillas.map((plantilla) => (
+                  <TableRow
+                    key={plantilla.id}
+                    sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
                   >
-                    ID: {plantilla.id}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Fecha de creación:{" "}
-                    {dayjs(plantilla.fechaCreacion).format(
-                      "DD/MM/YYYY hh:mm A"
-                    )}
-                  </Typography>
-                  <Typography variant="body2" mt={1}>
-                    Categoría:{" "}
-                    <Chip
-                      label={plantilla.categoria}
+                    <TableCell component="th" scope="row">
+                      {plantilla.nombre}
+                    </TableCell>
+                    <TableCell>{plantilla.id}</TableCell>
+                    <TableCell>
+                      {dayjs(plantilla.fechaCreacion).format(
+                        "DD/MM/YYYY hh:mm A"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={plantilla.categoria}
+                        size="small"
+                        sx={{
+                          ...getCategoryColor(plantilla.categoria),
+                          fontWeight: "bold",
+                          borderRadius: "4px",
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={plantilla.status}
+                        color={getStatusColor(plantilla.status)}
+                        size="small"
+                        sx={{ borderRadius: 1 }}
+                      />
+                    </TableCell>
+                    <TableCell
                       sx={{
-                        ...getCategoryColor(plantilla.categoria), // Aplica los colores de fondo y texto
-                        fontWeight: "bold", // Opcional: para que el texto sea negrita como el de idioma
-                        borderRadius: "4px", // Opcional: bordes menos redondeados
+                        maxWidth: 250,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
-                    />{" "}
-                    {/* Muestra la categoría de la plantilla */}
-                  </Typography>
-                  {plantilla.body && (
-                    <Typography variant="body2" mt={1}>
-                      {plantilla.body}
-                    </Typography>
-                  )}
-                  <Box mt={1}>
-                    <Chip
-                      label={plantilla.status}
-                      color={getStatusColor(plantilla.status)}
-                      size="small"
-                      sx={{ borderRadius: 1 }}
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Typography
-              variant="body1"
-              color="text.secondary"
-              align="center"
-              mt={4}
-            >
-              No se encontraron plantillas para la categoría seleccionada.
-            </Typography>
-          )}
-        </Stack>
+                    >
+                      {plantilla.body || "N/A"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : (
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            align="center"
+            mt={4}
+          >
+            No se encontraron plantillas para la categoría y/o estado
+            seleccionados.
+          </Typography>
+        )}
       </Box>
     </>
   );
