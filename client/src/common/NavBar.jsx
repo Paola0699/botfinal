@@ -50,12 +50,12 @@ const NavBar = (props) => {
       path: "/contactos",
       icon: <ContactsIcon />,
     },
-    /*  {
+    {
       title: "Cadenas Masivas",
       id: "cadenas_masivas",
       path: "/cadenas_masivas",
       icon: <HubIcon />,
-    }, */
+    },
     /*  {
       title: "Training",
       id: "training",

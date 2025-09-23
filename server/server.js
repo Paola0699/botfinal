@@ -105,7 +105,9 @@ app.post("/api/create-template", async (req, res) => {
 
 // ---------------- SEND message ----------------
 app.post("/api/send-message", async (req, res) => {
-  const { recipientId, message, imageUrl } = req.body;
+  console.log("📤 Enviando mensaje con payload:", req);
+  // MODIFICADO: Añade audioUrl
+  const { recipientId, message, imageUrl, audioUrl } = req.body; 
 
   if (!WHATSAPP_PHONE_NUMBER_ID) {
     return res.status(500).json({ error: "WHATSAPP_PHONE_NUMBER_ID no configurado en el backend." });
@@ -113,8 +115,9 @@ app.post("/api/send-message", async (req, res) => {
   if (!FB_BEARER_TOKEN) {
     return res.status(500).json({ error: "FB_BEARER_TOKEN no configurado en el backend." });
   }
-  if (!recipientId || (!message && !imageUrl)) {
-    return res.status(400).json({ error: "recipientId y message o imageUrl son requeridos." });
+  // MODIFICADO: La validación ahora incluye audioUrl
+  if (!recipientId || (!message && !imageUrl && !audioUrl)) {
+    return res.status(400).json({ error: "recipientId y message o imageUrl o audioUrl son requeridos." });
   }
 
   try {
@@ -127,7 +130,14 @@ app.post("/api/send-message", async (req, res) => {
         type: "image",
         image: { link: imageUrl },
       };
-    } else {
+    } else if (audioUrl) { // NUEVO: Manejar el envío de audio
+      payload = {
+        messaging_product: "whatsapp",
+        to: recipientId,
+        type: "audio", // Tipo de mensaje para audio
+        audio: { link: audioUrl }, // Enlace al archivo de audio
+      };
+    } else { // Si no es imagen ni audio, asume que es texto
       payload = {
         messaging_product: "whatsapp",
         to: recipientId,
@@ -136,6 +146,7 @@ app.post("/api/send-message", async (req, res) => {
       };
     }
 
+    console.log(payload)
     const fbRes = await fetch(
       `${FACEBOOK_GRAPH_API_BASE_URL}/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
@@ -162,7 +173,6 @@ app.post("/api/send-message", async (req, res) => {
     return res.status(500).json({ error: "Network error" });
   }
 });
-
 // ---------------- SERVE frontend (production) ----------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

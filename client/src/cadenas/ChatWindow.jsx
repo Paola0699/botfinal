@@ -3,20 +3,11 @@ import {
   Box,
   CircularProgress,
   Divider,
-  FormControl,
   IconButton,
-  InputLabel,
-  List,
-  ListItemAvatar,
-  ListItemText,
-  MenuItem,
   Paper,
-  Select,
   Stack,
   TextField,
   Typography,
-  ListItemButton,
-  Button, // Importar Button para el botón de limpiar imagen
 } from "@mui/material";
 import { useEffect, useRef, useState, useCallback } from "react";
 import supabase from "../supabaseClient";
@@ -36,12 +27,18 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SendIcon from "@mui/icons-material/Send";
 import PauseIcon from "@mui/icons-material/Pause";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import PauseCircleFilledIcon from "@mui/icons-material/PauseCircleFilled";
 import AttachFileIcon from "@mui/icons-material/AttachFile"; // Icono para adjuntar archivo
 import CloseIcon from "@mui/icons-material/Close"; // Icono para cerrar previsualización
+import MicIcon from "@mui/icons-material/Mic"; // Icono para grabar
+import StopIcon from "@mui/icons-material/Stop"; // Icono para detener grabación
+import CheckIcon from "@mui/icons-material/Check"; // Icono para confirmar envío de audio grabado
+import CancelIcon from "@mui/icons-material/Cancel"; // Icono para cancelar/descartar audio grabado
+import ChatLogColumn from "./ChatLogColumn";
+import ChatUserInfo from "./ChatUserInfo";
 
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
-const SUPABASE_STORAGE_BUCKET = "imgs_chats"; // Nombre del bucket de Supabase Storage
+const SUPABASE_STORAGE_BUCKET = "imgs_chats"; // Nombre del bucket para imágenes
+const SUPABASE_AUDIO_BUCKET = "audio"; // NUEVO: Nombre del bucket para audios
 
 // --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN ---
 const TEMPERATURE_DISPLAY_MAP = {
@@ -96,29 +93,6 @@ const getTemperatureIcon = (temperatureInternal, size = 16) => {
   }
 };
 
-// Función auxiliar para verificar si una cadena es una URL de imagen
-const isImageUrl = (url) => {
-  return (
-    typeof url === "string" &&
-    (url.endsWith(".jpg") ||
-      url.endsWith(".jpeg") ||
-      url.endsWith(".png") ||
-      url.endsWith(".gif") ||
-      url.endsWith(".webp"))
-  );
-};
-
-const isAudioUrl = (url) => {
-  return (
-    typeof url === "string" &&
-    (url.endsWith(".mp3") ||
-      url.endsWith(".m4a") ||
-      url.endsWith(".wav") ||
-      url.endsWith(".ogg") ||
-      url.endsWith(".mp4"))
-  );
-};
-
 const ChatWindow = () => {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -136,6 +110,23 @@ const ChatWindow = () => {
   const [selectedImage, setSelectedImage] = useState(null); // El archivo de imagen
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null); // URL para la previsualización
   const fileInputRef = useRef(null); // Ref para el input de archivo
+
+  // NUEVO: Estados para adjuntar audios
+  const [selectedAudio, setSelectedAudio] = useState(null); // El archivo de audio
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null); // URL para la previsualización del audio
+  const audioInputRef = useRef(null); // Ref para el input de archivo de audio
+
+  // NUEVO: Estados para la grabación de audio
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [audioChunks, setAudioChunks] = useState([]); // Estado de React, no se usa para recolección directa
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState(null);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState(null);
+  const audioPlayerRef = useRef(null); // Ref para el reproductor de audio de previsualización
+
+  // NUEVO: Refs para acceso estable al stream y chunks de audio
+  const mediaStreamRef = useRef(null); // Para el stream del micrófono
+  const audioChunksRef = useRef([]); // Para recolectar los chunks de audio de forma síncrona
 
   // Refs para acceso estable al estado más reciente dentro de los callbacks
   const conversationsRef = useRef(conversations);
@@ -215,7 +206,7 @@ const ChatWindow = () => {
         acc[sessionId].push({
           id: msg.id,
           fromMe: msg.role === "assistant",
-          text: msg.content, // 'content' puede ser texto o URL de imagen
+          text: msg.content,
           time: createdAt.toLocaleString("es-MX", {
             day: "2-digit",
             month: "2-digit",
@@ -225,6 +216,7 @@ const ChatWindow = () => {
           }),
           createdAt,
           leido: msg.leido,
+          type: msg.type || "text", // MODIFICADO: Usa 'type' en lugar de 'content_type'
         });
         return acc;
       }, {});
@@ -245,6 +237,7 @@ const ChatWindow = () => {
             time: msg.time,
             createdAt: msg.createdAt,
             leido: msg.leido,
+            type: msg.type, // MODIFICADO: Usa 'type'
           })),
         };
       });
@@ -328,6 +321,7 @@ const ChatWindow = () => {
         }),
         createdAt,
         leido: newRecord.leido,
+        type: newRecord.type || "text", // MODIFICADO: Usa 'type' en lugar de 'content_type'
       };
 
       setConversations((prevConversations) => {
@@ -485,8 +479,9 @@ const ChatWindow = () => {
 
         const { data: chatlogData, error: chatlogError } = await supabase
           .from("chatlog")
-          .select("id, session_id, role, content, created_at, canal, leido");
-
+          .select(
+            "id, session_id, role, content, created_at, canal, leido, type"
+          );
         if (chatlogError)
           throw new Error(
             `Error fetching initial chat log: ${chatlogError.message}`
@@ -666,63 +661,275 @@ const ChatWindow = () => {
     ? conversations[selectedUser.id]?.messages || []
     : [];
 
-  // --- Funciones para manejar la carga de imágenes ---
+  // --- Funciones para manejar la carga de imágenes y audios ---
+  const uploadFileToSupabase = async (file, fileType, bucketName) => {
+    if (!selectedUser) {
+      throw new Error(
+        `No hay usuario seleccionado para adjuntar el ${fileType}.`
+      );
+    }
+
+    let fileToUpload = file;
+    let fileExt = file.name?.split(".").pop() || "bin";
+    let contentType = file.type || "application/octet-stream";
+
+    // ✅ Caso especial: forzar audio a OGG
+    if (fileType === "audio") {
+      fileExt = "ogg";
+      contentType = "audio/ogg";
+
+      // Si el archivo no está ya en OGG, lo convertimos a OGG
+      if (!file.name.endsWith(".ogg")) {
+        fileToUpload = new File([file], `${Date.now()}.ogg`, {
+          type: contentType,
+        });
+      }
+    }
+
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 15)}.${fileExt}`;
+    const filePath = `${selectedUser.id}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .upload(filePath, fileToUpload, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType,
+      });
+
+    if (error) {
+      console.error(`Error al subir ${fileType}:`, error);
+      throw error;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(bucketName)
+      .getPublicUrl(filePath);
+
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error(`No se pudo obtener la URL pública del ${fileType}.`);
+    }
+
+    return publicUrlData.publicUrl;
+  };
+
   const handleImageSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
       setSelectedImage(file);
       setImagePreviewUrl(URL.createObjectURL(file));
+      clearAudioSelection(); // Limpiar audio adjunto
+      clearRecordedAudio(); // Limpiar audio grabado
     }
   };
 
   const clearImageSelection = () => {
     setSelectedImage(null);
     if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl); // Liberar el objeto URL
+      URL.revokeObjectURL(imagePreviewUrl);
       setImagePreviewUrl(null);
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = ""; // Limpiar el input de archivo
+      fileInputRef.current.value = "";
     }
   };
 
-  const uploadImageToSupabase = async (file) => {
-    if (!selectedUser) {
-      throw new Error("No hay usuario seleccionado para adjuntar la imagen.");
+  const handleAudioSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setSelectedAudio(file);
+      setAudioPreviewUrl(URL.createObjectURL(file));
+      clearImageSelection(); // Limpiar imagen
+      clearRecordedAudio(); // Limpiar audio grabado
     }
+  };
 
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${Date.now()}-${Math.random()
-      .toString(36)
-      .substring(2, 15)}.${fileExt}`;
-    // Guardar en una carpeta por session_id
-    const filePath = `${selectedUser.id}/${fileName}`;
+  const clearAudioSelection = () => {
+    setSelectedAudio(null);
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+      setAudioPreviewUrl(null);
+    }
+    if (audioInputRef.current) {
+      audioInputRef.current.value = "";
+    }
+  };
 
-    const { data, error } = await supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
+  // --- Funciones para la grabación de audio ---
+  const startRecording = async () => {
+    try {
+      const possibleMimeTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+        "audio/mp4",
+        "audio/wav",
+      ];
+      let selectedMimeType = "";
+      for (const type of possibleMimeTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          selectedMimeType = type;
+          break;
+        }
+      }
+      if (!selectedMimeType) {
+        alert(
+          "Tu navegador no soporta la grabación de audio en un formato compatible."
+        );
+        console.error("No hay mimeType compatible para MediaRecorder.");
+        return;
+      }
+      console.log("MimeType seleccionado para grabación:", selectedMimeType);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+        console.log(
+          `Pista de audio: ${track.label}, ID: ${track.id}, Estado: ${track.readyState}`
+        );
       });
 
-    if (error) {
-      console.error("Error al subir imagen a Supabase Storage:", error);
-      throw error;
+      const recorder = new MediaRecorder(stream, {
+        mimeType: selectedMimeType,
+      });
+      setMediaRecorder(recorder);
+      audioChunksRef.current = []; // Inicializar la ref síncrona
+      console.log(
+        "audioChunksRef.current reset al inicio de startRecording. Stack trace:"
+      );
+      console.trace();
+      setAudioChunks([]); // Limpiar estado de React
+      setRecordedAudioBlob(null);
+      setRecordedAudioUrl(null);
+
+      recorder.ondataavailable = (event) => {
+        console.log(
+          "ondataavailable fired! Data size:",
+          event.data.size,
+          "bytes"
+        );
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+          console.log(
+            "audioChunksRef.current.length after push:",
+            audioChunksRef.current.length
+          );
+        }
+      };
+      recorder.onstop = () => {
+        console.log(
+          "MediaRecorder stopped. Total chunks collected (from ref):",
+          audioChunksRef.current.length
+        );
+        const finalAudioBlob = new Blob(audioChunksRef.current, {
+          type: selectedMimeType,
+        });
+        if (finalAudioBlob.size > 0) {
+          const audioUrl = URL.createObjectURL(finalAudioBlob);
+          setRecordedAudioBlob(finalAudioBlob);
+          setRecordedAudioUrl(audioUrl);
+          console.log(
+            "Audio grabado exitosamente. Tamaño:",
+            finalAudioBlob.size,
+            "bytes"
+          );
+        } else {
+          console.warn("La grabación de audio resultó en un archivo vacío.");
+          alert(
+            "No se capturó audio. Asegúrate de que tu micrófono esté funcionando."
+          );
+          clearRecordedAudio();
+        }
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+        setIsRecording(false);
+      };
+      recorder.onerror = (event) => {
+        console.error("Error en MediaRecorder:", event.error);
+        alert(
+          `Error durante la grabación: ${event.error.name} - ${event.error.message}.`
+        );
+        setIsRecording(false);
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+      };
+      recorder.start(1000); // Iniciar la grabación, forzando ondataavailable cada 1000ms
+      console.log("MediaRecorder started.");
+      setIsRecording(true);
+      clearImageSelection();
+      clearAudioSelection();
+    } catch (err) {
+      console.error(
+        "Error al acceder al micrófono o iniciar la grabación:",
+        err
+      );
+      if (
+        err.name === "NotAllowedError" ||
+        err.name === "PermissionDeniedError"
+      ) {
+        alert(
+          "Permiso de micrófono denegado. Por favor, permite el acceso al micrófono en la configuración de tu navegador."
+        );
+      } else if (err.name === "NotFoundError") {
+        alert(
+          "No se encontró ningún micrófono. Asegúrate de que uno esté conectado y funcionando."
+        );
+      } else if (err.name === "NotReadableError") {
+        alert(
+          "El micrófono está en uso por otra aplicación o no está disponible. Cierra otras aplicaciones que usen el micrófono."
+        );
+      } else {
+        alert(`No se pudo iniciar la grabación: ${err.message}.`);
+      }
+      setIsRecording(false);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
     }
+  };
 
-    const { data: publicUrlData } = supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
-      .getPublicUrl(filePath);
-
-    if (!publicUrlData || !publicUrlData.publicUrl) {
-      throw new Error("No se pudo obtener la URL pública de la imagen.");
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
     }
+  };
 
-    return publicUrlData.publicUrl;
+  const clearRecordedAudio = () => {
+    setRecordedAudioBlob(null);
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+      setRecordedAudioUrl(null);
+    }
+    audioChunksRef.current = []; // Limpiar la ref síncrona
+    console.log(
+      "audioChunksRef.current reset en clearRecordedAudio. Stack trace:"
+    );
+    console.trace();
+    setAudioChunks([]); // Limpiar estado de React
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
   };
 
   const handleSend = async () => {
-    if (!selectedUser || (!newMessage.trim() && !selectedImage)) return;
+    if (
+      !selectedUser ||
+      (!newMessage.trim() &&
+        !selectedImage &&
+        !selectedAudio &&
+        !recordedAudioBlob)
+    )
+      return;
 
     if (!isFreeFormMessageAllowedBy24HourRule()) {
       console.warn(
@@ -732,45 +939,85 @@ const ChatWindow = () => {
     }
 
     const now = new Date();
-    let messageContent = newMessage;
-    let imageUrlToSend = null;
+    let messageContent = newMessage.trim();
+    let fileUrlToSend = null;
+    let messageType = "text"; // MODIFICADO: Renombra la variable a 'messageType' para evitar conflicto con la columna 'type'
 
     setNewMessage("");
     setSendingMessage(true);
 
     try {
       if (selectedImage) {
-        imageUrlToSend = await uploadImageToSupabase(selectedImage);
-        clearImageSelection(); // Limpiar previsualización después de subir
+        fileUrlToSend = await uploadFileToSupabase(
+          selectedImage,
+          "image",
+          SUPABASE_STORAGE_BUCKET
+        );
+        messageType = "image"; // MODIFICADO: Usa 'messageType'
+        clearImageSelection();
+      } else if (selectedAudio) {
+        fileUrlToSend = await uploadFileToSupabase(
+          selectedAudio,
+          "audio",
+          SUPABASE_AUDIO_BUCKET
+        );
+        messageType = "audio"; // MODIFICADO: Usa 'messageType'
+        clearAudioSelection();
+      } else if (recordedAudioBlob) {
+        const recordedAudioFile = new File(
+          [recordedAudioBlob],
+          `recorded-audio-${Date.now()}.ogg`,
+          {
+            type: "audio/ogg",
+          }
+        );
+
+        fileUrlToSend = await uploadFileToSupabase(
+          recordedAudioFile,
+          "audio",
+          SUPABASE_AUDIO_BUCKET
+        );
+        messageType = "audio";
+        clearRecordedAudio();
       }
 
-      const payload = {
+      if (!messageContent && !fileUrlToSend) {
+        setSendingMessage(false);
+        return;
+      }
+
+      const apiPayload = {
         recipientId: selectedUser.id,
-        message: newMessage.trim() || null, // texto opcional
-        imageUrl: imageUrlToSend, // imagen opcional
+        message: messageContent || null,
+        imageUrl: messageType === "image" ? fileUrlToSend : null, // MODIFICADO: Usa 'messageType'
+        audioUrl: messageType === "audio" ? fileUrlToSend : null, // MODIFICADO: Usa 'messageType'
       };
+
+      console.log("Payload enviado a la API:", apiPayload);
 
       const res = await fetch("/api/send-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(apiPayload),
       });
 
       if (res.ok) {
+        const contentToSave = fileUrlToSend || messageContent;
         const { data, error } = await supabase.from("chatlog").insert([
           {
             session_id: selectedUser.id,
             role: "assistant",
-            content: imageUrlToSend || messageContent, // guarda lo que se mandó
+            content: contentToSave,
             created_at: now.toISOString(),
             canal: conversations[selectedUser.id]?.canal || "desconocido",
             leido: true,
+            type: messageType, // MODIFICADO: Guarda en la columna 'type'
           },
         ]);
 
         if (error) {
           console.error("Error al guardar el mensaje en Supabase:", error);
-          if (!selectedImage) setNewMessage(messageContent);
+          if (!fileUrlToSend) setNewMessage(messageContent);
         }
       } else {
         console.error(
@@ -778,11 +1025,11 @@ const ChatWindow = () => {
           res.status,
           await res.text()
         );
-        if (!selectedImage) setNewMessage(messageContent);
+        if (!fileUrlToSend) setNewMessage(messageContent);
       }
     } catch (err) {
       console.error("Error en la solicitud de envío. Revirtiendo UI.", err);
-      if (!selectedImage) setNewMessage(messageContent);
+      if (!fileUrlToSend) setNewMessage(messageContent);
     } finally {
       setSendingMessage(false);
     }
@@ -847,12 +1094,20 @@ const ChatWindow = () => {
     !selectedUser ||
     sendingMessage ||
     !isFreeFormMessageAllowedBy24HourRule() ||
-    !!selectedImage;
+    !!selectedImage ||
+    !!selectedAudio ||
+    isRecording ||
+    !!recordedAudioUrl;
 
   const isButtonDisabled =
-    !selectedUser || sendingMessage || (!newMessage.trim() && !selectedImage);
+    !selectedUser ||
+    sendingMessage ||
+    (!newMessage.trim() &&
+      !selectedImage &&
+      !selectedAudio &&
+      !recordedAudioBlob) ||
+    isRecording;
 
-  console.log(selectedImage);
   if (loading) {
     return (
       <Box
@@ -868,247 +1123,22 @@ const ChatWindow = () => {
 
   return (
     <Box display="flex" height="100dvh" sx={{ bgcolor: "#f0f2f5" }}>
-      <Box
-        width={400}
-        sx={{ borderRight: "1px solid #eee", bgcolor: "#faf7ff" }}
-      >
-        <Paper
-          sx={{
-            height: "100%",
-            overflowY: "auto",
-            boxShadow: "none",
-          }}
-        >
-          <Typography variant="h6" p={2}>
-            Conversaciones
-          </Typography>
-          <Box px={2} pt={1} pb={1}>
-            <FormControl fullWidth size="small">
-              <InputLabel id="channel-select-label">Canal</InputLabel>
-              <Select
-                labelId="channel-select-label"
-                value={channelFilter}
-                label="Canal"
-                onChange={(e) => setChannelFilter(e.target.value)}
-              >
-                <MenuItem value="todos">Todos</MenuItem>
-                <MenuItem value="facebook">Facebook</MenuItem>
-                <MenuItem value="instagram">Instagram</MenuItem>
-                <MenuItem value="whatsapp">WhatsApp</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-          <Box px={2} pt={1} pb={1}>
-            <FormControl fullWidth size="small">
-              <InputLabel id="temperature-select-label">Temperatura</InputLabel>
-              <Select
-                labelId="temperature-select-label"
-                multiple
-                value={temperatureFilter}
-                onChange={(event) => {
-                  const {
-                    target: { value },
-                  } = event;
-                  if (value.includes("todos")) {
-                    setTemperatureFilter([]);
-                  } else {
-                    setTemperatureFilter(value);
-                  }
-                }}
-                label="Temperatura"
-                renderValue={(selected) => {
-                  if (selected.length === 0) {
-                    return "Todos";
-                  }
-                  return selected
-                    .map((val) => TEMPERATURE_DISPLAY_MAP[val])
-                    .join(", ");
-                }}
-              >
-                <MenuItem value="todos">Todos</MenuItem>
-                {TEMPERATURE_INTERNAL_VALUES.filter(
-                  (val) => val !== "desconocido"
-                ).map((tempInternal) => (
-                  <MenuItem key={tempInternal} value={tempInternal}>
-                    {TEMPERATURE_DISPLAY_MAP[tempInternal]}
-                  </MenuItem>
-                ))}
-                <MenuItem value="desconocido">Desconocido</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-          <Box px={2} pb={1}>
-            <TextField
-              fullWidth
-              placeholder="Buscar..."
-              variant="outlined"
-              size="small"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              sx={{ mt: 1 }}
-            />
-          </Box>
-          <Divider />
-          <List>
-            {filteredUsers.map((user) => {
-              const userConvo = conversations[user.id];
-              const lastMsg =
-                userConvo?.messages?.[userConvo.messages.length - 1];
-              const canal = userConvo?.canal;
-
-              const isSelected = user.id === selectedUser?.id;
-
-              return (
-                <ListItemButton
-                  key={user.id}
-                  selected={isSelected}
-                  onClick={() => setSelectedUser(user)}
-                  sx={{
-                    mx: 1,
-                    borderRadius: 2,
-                    minHeight: 72,
-                    transition:
-                      "background-color 0.3s ease, color 0.3s ease, border-left-color 0.3s ease",
-                    borderLeft: "4px solid transparent",
-                    paddingLeft: (theme) => theme.spacing(2),
-
-                    bgcolor:
-                      user.unreadCount > 0
-                        ? "rgba(37, 211, 102, 0.05)"
-                        : "inherit",
-                    color: "text.primary",
-
-                    "&:hover": {
-                      bgcolor:
-                        user.unreadCount > 0
-                          ? "rgba(37, 211, 102, 0.1)"
-                          : "rgba(0, 0, 0, 0.04)",
-                      color: "text.primary",
-                    },
-
-                    "&.Mui-selected": {
-                      bgcolor: "#e7f3ff",
-                      color: "text.primary",
-                      borderLeft: "4px solid #1976d2",
-                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
-                    },
-                    "&.Mui-selected:hover": {
-                      bgcolor: "#d7e3f7",
-                      color: "text.primary",
-                      borderLeft: "4px solid #1976d2",
-                      paddingLeft: (theme) => `calc(${theme.spacing(2)} - 4px)`,
-                    },
-                  }}
-                >
-                  <ListItemAvatar>
-                    <Avatar src={user.avatar} />
-                  </ListItemAvatar>
-                  <ListItemText
-                    primary={
-                      <Box
-                        sx={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          width: "100%",
-                        }}
-                      >
-                        <Typography
-                          component="span"
-                          variant="body1"
-                          sx={{
-                            fontWeight: user.unreadCount > 0 ? "700" : "600",
-                            color: "inherit",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 0.5,
-                          }}
-                        >
-                          {user.name}
-                          {user.isPaused && (
-                            <PauseCircleFilledIcon
-                              sx={{ fontSize: 16, ml: 0.5, color: "orange" }}
-                            />
-                          )}
-                          {user.unreadCount > 0 && (
-                            <Box
-                              sx={{
-                                bgcolor: "#25D366",
-                                color: "white",
-                                borderRadius: "12px",
-                                px: 1,
-                                py: 0.2,
-                                fontSize: "0.75rem",
-                                fontWeight: "bold",
-                                ml: 1,
-                                minWidth: "24px",
-                                textAlign: "center",
-                                flexShrink: 0,
-                              }}
-                            >
-                              {user.unreadCount}
-                            </Box>
-                          )}
-                        </Typography>
-                        {lastMsg && (
-                          <Typography
-                            component="span"
-                            variant="caption"
-                            sx={{
-                              color: "inherit",
-                              opacity: 0.8,
-                              flexShrink: 0,
-                            }}
-                          >
-                            {lastMsg.time}
-                          </Typography>
-                        )}
-                      </Box>
-                    }
-                    secondary={
-                      lastMsg ? (
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 0.5,
-                            mt: 0.5,
-                          }}
-                        >
-                          <Typography
-                            variant="body2"
-                            component="span"
-                            sx={{
-                              color: "inherit",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              flexGrow: 1,
-                              fontWeight:
-                                user.unreadCount > 0 ? "600" : "normal",
-                            }}
-                          >
-                            {isImageUrl(lastMsg.text)
-                              ? "🖼️ Imagen"
-                              : isAudioUrl(lastMsg.text)
-                              ? "🔊 Audio"
-                              : lastMsg.text}
-                          </Typography>
-                          {canal && getChannelIcon(canal, 14)}
-                          {user.temperatura &&
-                            getTemperatureIcon(user.temperatura, 14)}
-                        </Box>
-                      ) : (
-                        ""
-                      )
-                    }
-                  />
-                </ListItemButton>
-              );
-            })}
-          </List>
-        </Paper>
-      </Box>
+      <ChatLogColumn
+        channelFilter={channelFilter}
+        setChannelFilter={setChannelFilter}
+        temperatureFilter={temperatureFilter}
+        setTemperatureFilter={setTemperatureFilter}
+        setSearchTerm={setSearchTerm}
+        setSelectedUser={setSelectedUser}
+        getTemperatureIcon={getTemperatureIcon}
+        getChannelIcon={getChannelIcon}
+        selectedUser={selectedUser}
+        TEMPERATURE_INTERNAL_VALUES={TEMPERATURE_INTERNAL_VALUES}
+        TEMPERATURE_DISPLAY_MAP={TEMPERATURE_DISPLAY_MAP}
+        searchTerm={searchTerm}
+        filteredUsers={filteredUsers}
+        conversations={conversations}
+      />
       <Box width={800} display="flex" flexDirection="column">
         <Paper
           sx={{
@@ -1165,28 +1195,18 @@ const ChatWindow = () => {
                     maxWidth: "70%",
                   }}
                 >
-                  {isImageUrl(msg.text) ? (
+                  {msg.type === "image" ? (
                     <img
                       src={msg.text}
                       alt="Imagen adjunta"
                       style={{ maxWidth: "100%", borderRadius: "8px" }}
                     />
-                  ) : isAudioUrl(msg.text) ? (
-                    // Reproductor de audio nativo. Para mp4 funciona como audio si el navegador lo soporta.
+                  ) : msg.type === "audio" ? (
                     <Box
                       sx={{ display: "flex", flexDirection: "column", gap: 1 }}
                     >
-                      <audio
-                        controls
-                        preload="metadata"
-                        onLoadedMetadata={(e) =>
-                          console.log(
-                            "Duración detectada:",
-                            e.currentTarget.duration
-                          )
-                        }
-                      >
-                        <source src={msg.content} type="audio/mpeg" />
+                      <audio controls preload="metadata" src={msg.text}>
+                        Tu navegador no soporta el elemento de audio.
                       </audio>
                       <Typography variant="caption" sx={{ opacity: 0.8 }}>
                         🔊 audio adjunto
@@ -1200,6 +1220,7 @@ const ChatWindow = () => {
                       }}
                     />
                   )}
+
                   <Typography
                     variant="caption"
                     display="block"
@@ -1249,6 +1270,29 @@ const ChatWindow = () => {
 
             {/* Previsualización de imagen */}
             {imagePreviewUrl && (
+              <Box /* ... */>
+                <img /* ... */ />
+                <IconButton onClick={clearImageSelection} /* ... */>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
+
+            {/* NUEVO: Previsualización de audio adjunto */}
+            {audioPreviewUrl && (
+              <Box /* ... */>
+                <audio controls src={audioPreviewUrl} /* ... */ />
+                <Typography variant="caption" /* ... */>
+                  Audio adjunto
+                </Typography>
+                <IconButton onClick={clearAudioSelection} /* ... */>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            )}
+
+            {/* NUEVO: Previsualización de audio grabado */}
+            {recordedAudioUrl && (
               <Box
                 sx={{
                   mb: 2,
@@ -1256,39 +1300,36 @@ const ChatWindow = () => {
                   border: "1px solid #ddd",
                   borderRadius: 2,
                   display: "flex",
-                  alignItems: "flex-start",
-                  position: "relative",
-                  maxWidth: "300px", // Limitar el tamaño de la previsualización
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  maxWidth: "100%",
                   mx: "auto",
+                  gap: 1,
                 }}
               >
-                <img
-                  src={imagePreviewUrl}
-                  alt="Previsualización"
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: "150px",
-                    borderRadius: "4px",
-                  }}
-                />
-                <IconButton
-                  size="small"
-                  onClick={clearImageSelection}
-                  sx={{
-                    position: "absolute",
-                    top: 4,
-                    right: 4,
-                    bgcolor: "rgba(255,255,255,0.7)",
-                    "&:hover": { bgcolor: "rgba(255,255,255,0.9)" },
-                  }}
+                <IconButton size="small" onClick={clearRecordedAudio}>
+                  <CancelIcon />
+                </IconButton>
+                <audio
+                  controls
+                  src={recordedAudioUrl}
+                  ref={audioPlayerRef}
+                  style={{ flexGrow: 1 }}
                 >
-                  <CloseIcon fontSize="small" />
+                  Tu navegador no soporta el elemento de audio.
+                </audio>
+                <IconButton
+                  onClick={handleSend} // Envía el audio grabado
+                  disabled={sendingMessage}
+                  color="primary"
+                >
+                  <CheckIcon />
                 </IconButton>
               </Box>
             )}
 
             <Box sx={{ display: "flex", width: "100%" }}>
-              {/* Input de archivo oculto */}
+              {/* Input de archivo oculto para imágenes */}
               <input
                 type="file"
                 accept="image/*"
@@ -1296,7 +1337,10 @@ const ChatWindow = () => {
                 style={{ display: "none" }}
                 onChange={handleImageSelect}
                 disabled={
-                  !selectedUser || !isFreeFormMessageAllowedBy24HourRule()
+                  isInputDisabled ||
+                  !!selectedAudio ||
+                  isRecording ||
+                  !!recordedAudioUrl
                 }
               />
               {/* Botón para adjuntar imágenes */}
@@ -1304,73 +1348,95 @@ const ChatWindow = () => {
                 onClick={() => fileInputRef.current?.click()}
                 size="small"
                 disabled={
-                  !selectedUser ||
-                  sendingMessage ||
-                  !isFreeFormMessageAllowedBy24HourRule()
+                  isInputDisabled ||
+                  !!selectedAudio ||
+                  isRecording ||
+                  !!recordedAudioUrl
                 }
                 style={{ marginRight: "1rem" }}
               >
                 <AttachFileIcon />
               </IconButton>
 
-              <TextField
-                fullWidth
-                variant="outlined"
-                placeholder="Escribe un mensaje"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={isInputDisabled}
-                sx={{ borderRadius: 2 }}
+              {/* NUEVO: Input de archivo oculto para audios */}
+              <input
+                type="file"
+                accept="audio/*"
+                ref={audioInputRef}
+                style={{ display: "none" }}
+                onChange={handleAudioSelect}
+                disabled={
+                  isInputDisabled ||
+                  !!selectedImage ||
+                  isRecording ||
+                  !!recordedAudioUrl
+                }
               />
-              <IconButton
-                onClick={handleSend}
-                size="small"
-                disabled={isButtonDisabled}
-                style={{ marginLeft: "1rem" }}
-              >
-                <SendIcon />
-              </IconButton>
+
+              {/* NUEVO: Botón de grabar/detener audio */}
+              {!isRecording &&
+                !recordedAudioUrl &&
+                !selectedImage &&
+                !selectedAudio && (
+                  <IconButton
+                    onClick={startRecording}
+                    size="small"
+                    disabled={
+                      !selectedUser ||
+                      sendingMessage ||
+                      !isFreeFormMessageAllowedBy24HourRule()
+                    }
+                    color="primary"
+                    style={{ marginRight: "1rem" }}
+                  >
+                    <MicIcon />
+                  </IconButton>
+                )}
+              {isRecording && (
+                <IconButton
+                  onClick={stopRecording}
+                  size="small"
+                  color="error"
+                  style={{ marginRight: "1rem" }}
+                >
+                  <StopIcon />
+                </IconButton>
+              )}
+
+              {/* MODIFICADO: TextField se muestra solo si no hay grabación o audio grabado */}
+              {!isRecording && !recordedAudioUrl && (
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  placeholder="Escribe un mensaje"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  disabled={isInputDisabled}
+                  sx={{ borderRadius: 2 }}
+                />
+              )}
+
+              {/* MODIFICADO: Botón de enviar se muestra solo si no hay grabación ni audio grabado */}
+              {!isRecording && !recordedAudioUrl && (
+                <IconButton
+                  onClick={handleSend}
+                  size="small"
+                  disabled={isButtonDisabled}
+                  style={{ marginLeft: "1rem" }}
+                >
+                  <SendIcon />
+                </IconButton>
+              )}
             </Box>
           </Box>
         </Paper>
       </Box>
-      <Box
-        width={300}
-        sx={{ borderLeft: "1px solid #eee", bgcolor: "#faf7ff" }}
-      >
-        <Paper sx={{ height: "100%", p: 3, boxShadow: "none" }}>
-          <Box textAlign="center" mb={2}>
-            <Avatar
-              src={selectedUser?.avatar}
-              sx={{ width: 80, height: 80, mx: "auto", mb: 1 }}
-            />
-            <Typography style={{ marginTop: "1rem" }} variant="h5">
-              {selectedUser?.name}
-            </Typography>
-          </Box>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2">Correo</Typography>
-          <Typography variant="body2" mb={2}>
-            {selectedUser?.email}
-          </Typography>
-          <Typography variant="subtitle2">Teléfono</Typography>
-          <Typography variant="body2">{selectedUser?.phone}</Typography>
-          <Typography
-            variant="subtitle2"
-            sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
-          >
-            Temperatura{" "}
-            {selectedUser?.temperatura &&
-              getTemperatureIcon(selectedUser.temperatura, 16)}
-          </Typography>
-          <Typography variant="body2">
-            {selectedUser?.temperatura
-              ? TEMPERATURE_DISPLAY_MAP[selectedUser.temperatura]
-              : "Desconocido"}
-          </Typography>
-        </Paper>
-      </Box>
+      <ChatUserInfo
+        selectedUser={selectedUser}
+        getTemperatureIcon={getTemperatureIcon}
+        TEMPERATURE_DISPLAY_MAP={TEMPERATURE_DISPLAY_MAP}
+      />
     </Box>
   );
 };
