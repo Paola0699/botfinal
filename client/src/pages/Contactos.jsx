@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  TextField,
   Typography,
   TableContainer,
   Table,
@@ -11,92 +10,89 @@ import {
   TableCell,
   Paper,
   Chip,
-  InputAdornment,
   CircularProgress,
   TablePagination,
+  IconButton,
+  Menu,
+  MenuItem,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
-
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import PhoneIcon from "@mui/icons-material/Phone";
+import EventIcon from "@mui/icons-material/Event";
+import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
-import supabase from "../supabaseClient"; // Importa tu cliente de Supabase
+import supabase from "../supabaseClient";
+import WbSunnyIcon from "@mui/icons-material/WbSunny";
+import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import AcUnitIcon from "@mui/icons-material/AcUnit";
 
-// Importar iconos para la temperatura
-import AcUnitIcon from "@mui/icons-material/AcUnit"; // Frío (copo de nieve)
-import WbSunnyIcon from "@mui/icons-material/WbSunny"; // Tibio (sol pequeño)
-import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment"; // Caliente (fuego)
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline"; // Desconocido
+const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
-// Eliminamos las variables de Airtable
-// const API_KEY = import.meta.env.VITE_API_KEY;
-// const BASE_ID = import.meta.env.VITE_BASE_ID;
-const TABLE_NAME = import.meta.env.VITE_TABLE_NAME; // VITE_TABLE_NAME=chat_crm
-
-// --- Lógica para el color dinámico del chip de Tipo de Cliente ---
-const getClientTypeColor = (clientType) => {
-  switch (
-    clientType?.toLowerCase() // Usar toLowerCase para manejar mayúsculas/minúsculas
-  ) {
-    case "prospecto":
-      return {
-        bgcolor: "#FFFDE7", // Amarillo muy claro
-        color: "#FFC107", // Amarillo vibrante
-      };
-    case "paciente":
-      return {
-        bgcolor: "#E8F5E9", // Verde claro
-        color: "#2E7D32", // Verde oscuro
-      };
+const getTemperatureIcon = (temperatureInternal, size = 18) => {
+  switch (temperatureInternal) {
+    case "frio":
+      return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF", mr: 1 }} />;
+    case "tibio":
+      return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700", mr: 1 }} />;
+    case "caliente":
+      return (
+        <LocalFireDepartmentIcon
+          sx={{ fontSize: size, color: "#FF4500", mr: 1 }}
+        />
+      );
     default:
-      return {
-        bgcolor: "#EEEEEE", // Gris claro por defecto
-        color: "#424242", // Gris oscuro por defecto
-      };
+      return <HelpOutlineIcon sx={{ fontSize: size, color: "#999", mr: 1 }} />;
   }
 };
 
-// --- CONSTANTES Y FUNCIONES DE NORMALIZACIÓN DE TEMPERATURA (reutilizadas) ---
-const TEMPERATURE_DISPLAY_MAP = {
-  frio: "Frío",
-  tibio: "Tibio",
-  caliente: "Caliente",
-  desconocido: "Desconocido",
+const TEMPERATURE_OPTIONS = [
+  { value: "", label: "Todas", icon: <HelpOutlineIcon fontSize="small" /> },
+  {
+    value: "frio",
+    label: "Frío",
+    icon: <AcUnitIcon fontSize="small" sx={{ color: "#00BFFF" }} />,
+  },
+  {
+    value: "tibio",
+    label: "Tibio",
+    icon: <WbSunnyIcon fontSize="small" sx={{ color: "#FFD700" }} />,
+  },
+  {
+    value: "caliente",
+    label: "Caliente",
+    icon: (
+      <LocalFireDepartmentIcon fontSize="small" sx={{ color: "#FF4500" }} />
+    ),
+  },
+  {
+    value: "desconocido",
+    label: "Desconocido",
+    icon: <HelpOutlineIcon fontSize="small" sx={{ color: "#9CA3AF" }} />,
+  },
+];
+
+const getClientTypeColor = (clientType) => {
+  switch (clientType?.toLowerCase()) {
+    case "prospecto":
+      return { bgcolor: "#FFFDE7", color: "#FFC107" };
+    case "paciente":
+      return { bgcolor: "#E8F5E9", color: "#2E7D32" };
+    default:
+      return { bgcolor: "#EEEEEE", color: "#424242" };
+  }
 };
 
-const TEMPERATURE_INTERNAL_VALUES = Object.keys(TEMPERATURE_DISPLAY_MAP);
-
-// Función para normalizar la temperatura a un valor interno (minúsculas, sin acentos)
 const normalizeTemperatureInternal = (temp) => {
-  if (!temp) return "desconocido"; // Si temp es undefined, null o vacío, es desconocido
+  if (!temp) return "desconocido";
   const lowerTemp = String(temp)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  if (TEMPERATURE_INTERNAL_VALUES.includes(lowerTemp)) {
+  if (TEMPERATURE_OPTIONS.map((o) => o.value).includes(lowerTemp))
     return lowerTemp;
-  }
-  return "desconocido"; // Si no coincide con ningún valor conocido, es desconocido
-};
-
-// Función para obtener el icono de temperatura
-const getTemperatureIcon = (temperatureInternal, size = 18) => {
-  // Aumentado el tamaño a 18 para mejor visibilidad
-  switch (temperatureInternal) {
-    case "frio":
-      return <AcUnitIcon sx={{ fontSize: size, color: "#00BFFF", mr: 0.5 }} />; // Azul claro para frío
-    case "tibio":
-      return <WbSunnyIcon sx={{ fontSize: size, color: "#FFD700", mr: 0.5 }} />; // Amarillo para tibio
-    case "caliente":
-      return (
-        <LocalFireDepartmentIcon
-          sx={{ fontSize: size, color: "#FF4500", mr: 0.5 }}
-        />
-      ); // Naranja-rojo para caliente
-    default:
-      return (
-        <HelpOutlineIcon sx={{ fontSize: size, color: "#999", mr: 0.5 }} />
-      ); // Gris para desconocido
-  }
+  return "desconocido";
 };
 
 const ContactosView = () => {
@@ -104,78 +100,72 @@ const ContactosView = () => {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [temperatureFilter, setTemperatureFilter] = useState("");
+  const navigate = useNavigate();
 
-  // Estados para la paginación
+  // menu del chip dropdown
+  const [anchorEl, setAnchorEl] = useState(null);
+  const openMenu = Boolean(anchorEl);
+
+  const handleChipClick = (e) => {
+    setAnchorEl(e.currentTarget);
+  };
+
+  const handleMenuClose = (value) => {
+    if (value !== undefined) setTemperatureFilter(value);
+    setAnchorEl(null);
+  };
+
+  // paginación
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Función para obtener los registros de Supabase
   const fetchSupabaseRecords = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Consulta a la tabla 'chat_crm' en Supabase
       const { data, error: supabaseError } = await supabase
-        .from(TABLE_NAME) // Usa el nombre de tu tabla de contactos, que es 'chat_crm'
-        .select("*"); // Selecciona todas las columnas, o especifica las que necesites
+        .from(TABLE_NAME)
+        .select("*");
+      if (supabaseError) throw new Error(supabaseError.message);
 
-      if (supabaseError) {
-        throw new Error(
-          `Error ${supabaseError.code}: ${supabaseError.message}`
-        );
-      }
-
-      const formattedContacts = data.map((record) => {
-        return {
-          // Asumiendo que 'session_id' es el identificador único en chat_crm
-          id: record.session_id,
-          nombre: record.nombre || record.username || "",
-          apellido: record.apellidos || "", // Asumiendo que existe una columna 'apellidos'
-          telefono: record.telefono || "",
-          mail: record.mail || "", // Asumiendo que existe una columna 'mail'
-          tipoCliente: record.tipo_cliente || "desconocido", // Asumiendo 'tipo_cliente'
-          temperatura: normalizeTemperatureInternal(
-            record.temperatura || "desconocido" // Usar la temperatura de Supabase
-          ),
-        };
-      });
+      const formattedContacts = data.map((record) => ({
+        id: record.session_id,
+        nombre: record.nombre || record.username || "",
+        apellido: record.apellidos || "",
+        telefono: record.telefono || "",
+        mail: record.mail || "",
+        tipoCliente: record.tipo_cliente || "desconocido",
+        temperatura: normalizeTemperatureInternal(record.temperatura),
+      }));
       setContacts(formattedContacts);
     } catch (err) {
-      console.error("Error al obtener contactos:", err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Cargar datos al montar el componente
   useEffect(() => {
     fetchSupabaseRecords();
-  }, []); // El array vacío asegura que se ejecuta solo una vez al montar
+  }, []);
 
-  // Filtrar contactos basado en el término de búsqueda
-  const filteredContacts = contacts.filter((contact) =>
-    Object.values(contact).some((value) =>
-      String(value).toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredContacts = contacts
+    .filter((c) =>
+      Object.values(c).some((v) =>
+        String(v).toLowerCase().includes(searchTerm.toLowerCase())
+      )
     )
-  );
+    .filter((c) =>
+      temperatureFilter ? c.temperatura === temperatureFilter : true
+    );
 
-  // Handlers de paginación
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
+  const handleChangePage = (e, newPage) => setPage(newPage);
+  const handleChangeRowsPerPage = (e) => {
+    setRowsPerPage(parseInt(e.target.value, 10));
+    setPage(0);
   };
 
-  const handleChangeRowsPerPage = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0); // Resetear a la primera página al cambiar el número de filas
-  };
-
-  const handleChatClick = (contact) => {
-    alert(`Iniciando chat con ${contact.nombre} ${contact.apellido}`);
-    // Aquí iría la lógica para abrir el chat
-  };
-
-  // --- Renderizado Condicional del Loader de Pantalla Completa ---
   if (loading) {
     return (
       <Box
@@ -183,97 +173,88 @@ const ContactosView = () => {
         display="flex"
         justifyContent="center"
         alignItems="center"
+        sx={{ bgcolor: "#f9fafb" }}
       >
         <CircularProgress size={60} />
       </Box>
     );
   }
 
-  // --- Renderizado Condicional de Error de Pantalla Completa ---
-  if (error) {
-    return (
-      <Box
+  return (
+    <Box sx={{ p: 4, bgcolor: "#f9fafb", minHeight: "100vh" }}>
+      <Paper
+        elevation={0}
         sx={{
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-          width: "100vw",
-          position: "fixed",
-          top: 0,
-          left: 0,
-          backgroundColor: "rgba(255, 255, 255, 0.9)",
-          zIndex: 9999,
-          color: "error.main",
+          p: 3,
+          borderRadius: 3,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
+          bgcolor: "white",
         }}
       >
-        <Typography variant="h5" color="error">
-          Error al cargar contactos:
+        {/* Encabezado */}
+        <Typography variant="h5" fontWeight="bold" sx={{ color: "#111827" }}>
+          Mis contactos
         </Typography>
-        <Typography
-          variant="body1"
-          color="error"
-          sx={{ mt: 1, textAlign: "center" }}
-        >
-          {error}
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Aquí puedes gestionar, filtrar y explorar la lista de todos tus
+          contactos.
         </Typography>
-        <Button
-          onClick={fetchSupabaseRecords} // Reintentar la carga
-          variant="contained"
-          color="error"
-          sx={{ mt: 3 }}
-        >
-          Reintentar
-        </Button>
-      </Box>
-    );
-  }
 
-  return (
-    <Box sx={{ p: 4, backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
-      <Box sx={{ bgcolor: "white", p: 3, borderRadius: 2, boxShadow: 1 }}>
-        {/* Sección superior: Búsqueda y Botones de Acción */}
+        {/* Top bar */}
         <Box
           display="flex"
+          flexDirection={{ xs: "column", sm: "row" }}
           justifyContent="space-between"
-          alignItems="center"
+          alignItems={{ xs: "stretch", sm: "center" }}
+          gap={2}
           mb={3}
-          flexWrap="wrap"
         >
-          <TextField
-            variant="outlined"
-            placeholder="Buscar contacto..."
-            size="small"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{ flexGrow: 1, mr: 2, mb: { xs: 2, sm: 0 } }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon color="action" />
-                </InputAdornment>
-              ),
+          {/* Search input minimalista */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              bgcolor: "#f3f4f6",
+              borderRadius: "999px",
+              px: 2,
             }}
-          />
-          <Box display="flex" gap={2}>
+          >
+            <SearchIcon sx={{ color: "action.active", mr: 1 }} />
+            <input
+              style={{
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                flex: 1,
+                fontSize: "0.95rem",
+                padding: "10px 0",
+                color: "#374151",
+              }}
+              placeholder="Buscar contacto..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </Box>
+
+          <Box display="flex" gap={1}>
             <Button
               variant="contained"
-              color="primary"
               sx={{
-                borderRadius: 2,
-                background: "linear-gradient(45deg, #6A11CB, #2575FC)",
+                borderRadius: "999px",
+                px: 3,
                 textTransform: "capitalize",
+                background: "linear-gradient(45deg, #6A11CB, #2575FC)",
               }}
             >
               Crear nuevo
             </Button>
             <Button
               variant="outlined"
-              color="primary"
               sx={{
-                textTransform: "none",
-                borderRadius: 2,
+                borderRadius: "999px",
+                px: 3,
+                textTransform: "capitalize",
                 borderColor: "#6A11CB",
                 color: "#6A11CB",
               }}
@@ -283,90 +264,159 @@ const ContactosView = () => {
           </Box>
         </Box>
 
-        {/* Título de la tabla */}
-        <Typography variant="h6" sx={{ fontWeight: "bold", mb: 2 }}>
-          Lista de Contactos
-        </Typography>
+        {/* Filtros */}
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.5, mb: 3 }}>
+          {[
+            "Sin respuesta en 24 horas",
+            "Sin respuesta en 6 días",
+            "No hemos contestado",
+            "Número de touchpoints",
+          ].map((label, idx) => (
+            <Chip
+              key={idx}
+              label={label}
+              variant="outlined"
+              clickable
+              sx={{ borderRadius: "999px", fontSize: "0.8rem", px: 1.5 }}
+            />
+          ))}
 
-        {/* Tabla de Contactos */}
+          {/* Chip con dropdown */}
+          <Chip
+            label={
+              temperatureFilter
+                ? TEMPERATURE_OPTIONS.find(
+                    (opt) => opt.value === temperatureFilter
+                  )?.label
+                : "Temperatura"
+            }
+            onClick={handleChipClick}
+            sx={{
+              borderRadius: "999px",
+              fontSize: "0.8rem",
+              px: 1.5,
+              bgcolor: temperatureFilter ? "#2575FC" : "transparent",
+              color: temperatureFilter ? "white" : "#374151",
+              cursor: "pointer",
+            }}
+          />
+          <Menu
+            anchorEl={anchorEl}
+            open={openMenu}
+            onClose={() => handleMenuClose()}
+          >
+            {TEMPERATURE_OPTIONS.map((opt) => (
+              <MenuItem
+                key={opt.value}
+                onClick={() => handleMenuClose(opt.value)}
+              >
+                {opt.icon}
+                <Box ml={1}>{opt.label}</Box>
+              </MenuItem>
+            ))}
+          </Menu>
+        </Box>
+
+        {/* Tabla de contactos (sin cambios grandes de estilo aquí, sigue moderna) */}
         <TableContainer
           component={Paper}
-          sx={{ boxShadow: 0, border: "1px solid #e0e0e0" }}
+          sx={{ borderRadius: 3, boxShadow: "0 4px 16px rgba(0,0,0,0.05)" }}
         >
-          <Table sx={{ minWidth: 650 }} aria-label="simple table">
-            <TableHead sx={{ bgcolor: "#f5f5f5" }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: "bold" }}>Nombre</TableCell>
-                <TableCell sx={{ fontWeight: "bold" }}>Apellido</TableCell>
-                <TableCell sx={{ fontWeight: "bold" }}>Teléfono</TableCell>
-                <TableCell sx={{ fontWeight: "bold" }}>Mail</TableCell>
-                <TableCell sx={{ fontWeight: "bold" }}>
-                  Tipo de Cliente
-                </TableCell>
-                <TableCell sx={{ fontWeight: "bold" }} align="center">
-                  Acción
-                </TableCell>
+          <Table>
+            <TableHead>
+              <TableRow
+                sx={{
+                  "& .MuiTableCell-root": {
+                    fontWeight: "bold",
+                    color: "#374151",
+                    bgcolor: "#f9fafb",
+                  },
+                }}
+              >
+                <TableCell>Nombre</TableCell>
+                <TableCell>Apellido</TableCell>
+                <TableCell>Teléfono</TableCell>
+                <TableCell>Mail</TableCell>
+                <TableCell>Tipo de Cliente</TableCell>
+                <TableCell align="center">Acción</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredContacts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    No se encontraron contactos.
+                  <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                    No se encontraron contactos
                   </TableCell>
                 </TableRow>
               ) : (
-                // Aplicar paginación aquí
                 filteredContacts
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                  .map((contact) => {
-                    const clientTypeStyles = getClientTypeColor(
-                      contact.tipoCliente
-                    );
+                  .map((c) => {
+                    const styles = getClientTypeColor(c.tipoCliente);
                     return (
                       <TableRow
-                        key={contact.id} // Usamos contact.id (que es session_id) como key
+                        key={c.id}
+                        hover
                         sx={{
-                          "&:last-child td, &:last-child th": { border: 0 },
+                          "&:hover": { bgcolor: "#f9f9ff" },
+                          cursor: "pointer",
                         }}
+                        onClick={() => navigate(`/contacto/${c.id}`)}
                       >
-                        <TableCell component="th" scope="row">
+                        {/* Columna Nombre con icono de temperatura */}
+                        <TableCell sx={{ fontWeight: 600 }}>
                           <Box sx={{ display: "flex", alignItems: "center" }}>
-                            {/* Icono de temperatura */}
-                            {getTemperatureIcon(contact.temperatura)}
-                            {contact.nombre}
+                            {getTemperatureIcon(c.temperatura, 18)}
+                            {c.nombre}
                           </Box>
                         </TableCell>
-                        <TableCell>{contact.apellido}</TableCell>
-                        <TableCell>{contact.telefono}</TableCell>
-                        <TableCell>{contact.mail}</TableCell>
+
+                        <TableCell sx={{ color: "text.secondary" }}>
+                          {c.apellido}
+                        </TableCell>
+                        <TableCell sx={{ color: "text.secondary" }}>
+                          {c.telefono}
+                        </TableCell>
+                        <TableCell sx={{ color: "text.secondary" }}>
+                          {c.mail}
+                        </TableCell>
                         <TableCell>
                           <Chip
-                            label={
-                              contact.tipoCliente
-                                ? contact.tipoCliente.charAt(0).toUpperCase() +
-                                  contact.tipoCliente.slice(1).toLowerCase()
-                                : "Desconocido"
-                            }
+                            label={c.tipoCliente}
                             sx={{
-                              ...clientTypeStyles,
+                              ...styles,
+                              borderRadius: "999px",
                               fontWeight: "bold",
-                              borderRadius: "4px",
-                              minWidth: "80px",
-                              justifyContent: "center",
                             }}
                           />
                         </TableCell>
                         <TableCell align="center">
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<ChatBubbleOutlineIcon />}
-                            onClick={() => handleChatClick(contact)}
-                            sx={{ textTransform: "none" }}
+                          <Box
+                            sx={{
+                              display: "flex",
+                              gap: 1,
+                              justifyContent: "center",
+                            }}
                           >
-                            Chat
-                          </Button>
+                            <IconButton
+                              size="small"
+                              sx={{ bgcolor: "#25D366", color: "white" }}
+                            >
+                              <WhatsAppIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              sx={{ bgcolor: "#2575FC", color: "white" }}
+                            >
+                              <PhoneIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              sx={{ bgcolor: "#f50057", color: "white" }}
+                            >
+                              <EventIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
                         </TableCell>
                       </TableRow>
                     );
@@ -376,21 +426,17 @@ const ContactosView = () => {
           </Table>
         </TableContainer>
 
-        {/* Componente de Paginación */}
         <TablePagination
-          rowsPerPageOptions={[5, 10, 25]} // Opciones de filas por página
+          rowsPerPageOptions={[5, 10, 25]}
           component="div"
-          count={filteredContacts.length} // Total de elementos filtrados
+          count={filteredContacts.length}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
-          labelRowsPerPage="Filas por página:" // Etiqueta personalizada
-          labelDisplayedRows={({ from, to, count }) =>
-            `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`
-          } // Formato de texto para el rango
+          labelRowsPerPage="Filas por página:"
         />
-      </Box>
+      </Paper>
     </Box>
   );
 };
