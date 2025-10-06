@@ -447,6 +447,7 @@ const ChatWindow = () => {
       setLoading(true);
 
       try {
+        // 1️⃣ Obtener CRM (igual que antes)
         const { data: crmData, error: crmError } = await supabase
           .from(TABLE_NAME)
           .select(
@@ -460,10 +461,10 @@ const ChatWindow = () => {
 
         const profiles = {};
         crmData.forEach((record) => {
-          const senderId = record.session_id;
+          const senderId = String(record.session_id); // aseguramos que sea string
           if (senderId) {
             profiles[senderId] = {
-              id_supabase: record.session_id,
+              id_supabase: senderId,
               name: record.nombre || senderId,
               email: record.username || "Sin correo",
               phone: record.telefono || "Sin teléfono",
@@ -475,20 +476,63 @@ const ChatWindow = () => {
             };
           }
         });
+
         setUserProfiles(profiles);
 
-        const { data: chatlogData, error: chatlogError } = await supabase
-          .from("chatlog")
-          .select(
-            "id, session_id, role, content, created_at, canal, leido, type"
-          );
-        if (chatlogError)
-          throw new Error(
-            `Error fetching initial chat log: ${chatlogError.message}`
-          );
+        // 2️⃣ Obtener TODOS los mensajes de chatlog con paginación
+        let allChatlogData = [];
+        let from = 0;
+        const pageSize = 1000;
+        let moreData = true;
 
-        processChatlogData(chatlogData, profiles);
+        while (moreData) {
+          const { data, error } = await supabase
+            .from("chatlog")
+            .select(
+              "id, session_id, role, content, created_at, canal, leido, type"
+            )
+            .order("created_at", { ascending: true })
+            .range(from, from + pageSize - 1);
 
+          if (error) throw error;
+
+          if (!data || data.length === 0) {
+            moreData = false;
+            break;
+          }
+
+          allChatlogData = allChatlogData.concat(data);
+
+          if (data.length < pageSize) {
+            moreData = false;
+          } else {
+            from += pageSize;
+          }
+        }
+
+        console.log("📦 Mensajes cargados (total):", allChatlogData.length);
+
+        // 3️⃣ Crear perfiles faltantes
+        for (const msg of allChatlogData) {
+          const sid = String(msg.session_id);
+          if (!profiles[sid]) {
+            profiles[sid] = {
+              id_supabase: sid,
+              name: `Usuario ${sid}`,
+              email: "Desconocido",
+              phone: "Desconocido",
+              avatar:
+                "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
+              temperatura: "desconocido",
+              isPaused: false,
+            };
+          }
+        }
+
+        // 4️⃣ Procesar mensajes agrupados
+        processChatlogData(allChatlogData, profiles);
+
+        // 5️⃣ Suscripciones realtime (igual que antes)
         if (!crmChannelRef.current) {
           crmChannelRef.current = supabase
             .channel("crm_profile_changes")
@@ -497,7 +541,9 @@ const ChatWindow = () => {
               { event: "*", schema: "public", table: TABLE_NAME },
               handleRealtimeCrmChange
             )
-            .subscribe();
+            .subscribe((status) =>
+              console.log("[Realtime] CRM channel:", status)
+            );
         }
 
         if (!chatlogChannelRef.current) {
@@ -508,7 +554,9 @@ const ChatWindow = () => {
               { event: "*", schema: "public", table: "chatlog" },
               handleRealtimeChatlogChange
             )
-            .subscribe();
+            .subscribe((status) =>
+              console.log("[Realtime] Chatlog channel:", status)
+            );
         }
 
         setLoading(false);
@@ -520,6 +568,7 @@ const ChatWindow = () => {
 
     setupInitialDataAndSubscriptions();
 
+    // 🔚 Cleanup: eliminar canales al desmontar el componente
     return () => {
       if (crmChannelRef.current) {
         supabase.removeChannel(crmChannelRef.current);
