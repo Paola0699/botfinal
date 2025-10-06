@@ -248,58 +248,79 @@ const ChatWindow = () => {
   );
 
   const handleRealtimeCrmChange = useCallback((payload) => {
-    const { eventType, new: newRecord, old: oldRecord } = payload;
+    console.log("[Realtime CRM Change]", payload);
 
-    if (newRecord && newRecord.session_id) {
-      const sessionId = newRecord.session_id;
-      const updatedProfile = {
-        id_supabase: newRecord.session_id,
-        name: newRecord.nombre || sessionId,
-        email: newRecord.username || "Sin correo",
-        phone: newRecord.telefono || "Sin teléfono",
+    // ⛔ aseguramos que sólo manipula estado local
+    if (!payload.new?.session_id) return;
+
+    const sessionId = String(payload.new.session_id);
+
+    // Actualiza profiles
+    setUserProfiles((prevProfiles) => ({
+      ...prevProfiles,
+      [sessionId]: {
+        ...(prevProfiles[sessionId] || {}),
+        id_supabase: sessionId,
+        name:
+          payload.new.nombre ||
+          prevProfiles[sessionId]?.name ||
+          `Usuario ${sessionId}`,
+        email:
+          payload.new.username ||
+          prevProfiles[sessionId]?.email ||
+          "Desconocido",
+        phone:
+          payload.new.telefono ||
+          prevProfiles[sessionId]?.phone ||
+          "Desconocido",
         avatar:
-          newRecord.profile_pic ||
-          `https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png`,
-        temperatura: normalizeTemperatureInternal(newRecord.temperatura),
-        isPaused: newRecord.pause || false,
-      };
+          payload.new.profile_pic ||
+          prevProfiles[sessionId]?.avatar ||
+          "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
+        temperatura: normalizeTemperatureInternal(
+          payload.new.temperatura ?? prevProfiles[sessionId]?.temperatura
+        ),
+        isPaused:
+          payload.new.pause ?? prevProfiles[sessionId]?.isPaused ?? false,
+      },
+    }));
 
-      setUserProfiles((prevProfiles) => ({
-        ...prevProfiles,
-        [sessionId]: updatedProfile,
-      }));
+    // Actualiza users
+    setUsers((prevUsers) =>
+      prevUsers.map((user) =>
+        String(user.id) === sessionId
+          ? {
+              ...user,
+              name: payload.new.nombre || user.name,
+              email: payload.new.username || user.email,
+              phone: payload.new.telefono || user.phone,
+              avatar: payload.new.profile_pic || user.avatar,
+              temperatura:
+                normalizeTemperatureInternal(payload.new.temperatura) ||
+                user.temperatura,
+              isPaused: payload.new.pause ?? user.isPaused,
+            }
+          : user
+      )
+    );
 
-      setUsers((prevUsers) =>
-        prevUsers.map((user) =>
-          user.id === sessionId
-            ? {
-                ...user,
-                name: updatedProfile.name,
-                email: updatedProfile.email,
-                phone: updatedProfile.phone,
-                avatar: updatedProfile.avatar,
-                temperatura: updatedProfile.temperatura,
-                isPaused: updatedProfile.isPaused,
-              }
-            : user
-        )
-      );
-
-      setSelectedUser((prevSelectedUser) => {
-        if (prevSelectedUser && prevSelectedUser.id === sessionId) {
-          return {
-            ...prevSelectedUser,
-            name: updatedProfile.name,
-            email: updatedProfile.email,
-            phone: updatedProfile.phone,
-            avatar: updatedProfile.avatar,
-            temperatura: updatedProfile.temperatura,
-            isPaused: updatedProfile.isPaused,
-          };
-        }
-        return prevSelectedUser;
-      });
-    }
+    // Actualiza selectedUser si es el mismo
+    setSelectedUser((prevSelectedUser) => {
+      if (prevSelectedUser && String(prevSelectedUser.id) === sessionId) {
+        return {
+          ...prevSelectedUser,
+          name: payload.new.nombre || prevSelectedUser.name,
+          email: payload.new.username || prevSelectedUser.email,
+          phone: payload.new.telefono || prevSelectedUser.phone,
+          avatar: payload.new.profile_pic || prevSelectedUser.avatar,
+          temperatura:
+            normalizeTemperatureInternal(payload.new.temperatura) ||
+            prevSelectedUser.temperatura,
+          isPaused: payload.new.pause ?? prevSelectedUser.isPaused,
+        };
+      }
+      return prevSelectedUser;
+    });
   }, []);
 
   const handleRealtimeChatlogChange = useCallback((payload) => {
