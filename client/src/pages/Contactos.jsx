@@ -27,6 +27,8 @@ import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import LocalFireDepartmentIcon from "@mui/icons-material/LocalFireDepartment";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import AcUnitIcon from "@mui/icons-material/AcUnit";
+import { Avatar, Card, CardContent, CardHeader } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 
 const TABLE_NAME = import.meta.env.VITE_TABLE_NAME;
 
@@ -102,6 +104,22 @@ const ContactosView = () => {
   const [error, setError] = useState(null);
   const [temperatureFilter, setTemperatureFilter] = useState("");
   const navigate = useNavigate();
+  const TABLE_OWNERS_NAME = "owners";
+  const [owners, setOwners] = useState([]);
+  const [selectedOwner, setSelectedOwner] = useState(null); // 👈 nuevo estado
+  const [anchorElOwner, setAnchorElOwner] = useState(null); // 👈 para abrir el menú del filtro
+  const openOwnerMenu = Boolean(anchorElOwner);
+
+  const handleOwnerChipClick = (e) => {
+    setAnchorElOwner(e.currentTarget);
+  };
+
+  const handleOwnerSelect = (owner) => {
+    setSelectedOwner(owner);
+    setAnchorElOwner(null);
+  };
+
+  const handleClearOwner = () => setSelectedOwner(null);
 
   // menu del chip dropdown
   const [anchorEl, setAnchorEl] = useState(null);
@@ -137,6 +155,7 @@ const ContactosView = () => {
         mail: record.mail || "",
         tipoCliente: record.tipo_cliente || "desconocido",
         temperatura: normalizeTemperatureInternal(record.temperatura),
+        owner: record.owner || record.owner_id || record.id_owner || null,
       }));
       setContacts(formattedContacts);
     } catch (err) {
@@ -146,9 +165,66 @@ const ContactosView = () => {
     }
   };
 
+  const getOwnersInfo = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: supabaseError } = await supabase
+        .from(TABLE_OWNERS_NAME)
+        .select("*");
+
+      if (supabaseError) throw new Error(supabaseError.message);
+      setOwners(data || []);
+    } catch (err) {
+      console.error("Error al obtener contactos:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSupabaseRecords();
+    getOwnersInfo();
   }, []);
+
+  useEffect(() => {
+    const fetch = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        let query = supabase.from(TABLE_NAME).select("*");
+        if (selectedOwner?.id_owner) {
+          query = query.eq("owner", selectedOwner.id_owner); // usa el nombre real de tu columna
+        }
+        const { data, error: supabaseError } = await query;
+        if (supabaseError) throw new Error(supabaseError.message);
+
+        const formatted = (data || []).map((record) => ({
+          id: record.session_id,
+          nombre: record.nombre || record.username || "",
+          apellido: record.apellidos || "",
+          telefono: record.telefono || "",
+          mail: record.mail || "",
+          tipoCliente: record.tipo_cliente || "desconocido",
+          temperatura: normalizeTemperatureInternal(record.temperatura),
+          owner: record.owner || record.owner_id || record.id_owner || null,
+        }));
+
+        setContacts(formatted);
+        setPage(0);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOwner?.id_owner]);
+
+  console.log("owners:", owners);
 
   const filteredContacts = contacts
     .filter((c) =>
@@ -158,7 +234,8 @@ const ContactosView = () => {
     )
     .filter((c) =>
       temperatureFilter ? c.temperatura === temperatureFilter : true
-    );
+    )
+    .filter((c) => (selectedOwner ? c.owner === selectedOwner.id_owner : true));
 
   const handleChangePage = (e, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (e) => {
@@ -315,7 +392,100 @@ const ContactosView = () => {
               </MenuItem>
             ))}
           </Menu>
+
+          {/* 🔹 NUEVO CHIP DE OWNER */}
+          <Chip
+            label={
+              selectedOwner
+                ? `${selectedOwner.nombre} ${selectedOwner.apellidos}`
+                : "Filtrar por Owner"
+            }
+            onClick={handleOwnerChipClick}
+            deleteIcon={selectedOwner ? <ExpandMoreIcon /> : undefined}
+            sx={{
+              borderRadius: "999px",
+              fontSize: "0.8rem",
+              px: 1.5,
+              bgcolor: selectedOwner ? "#2575FC" : "transparent",
+              color: selectedOwner ? "white" : "#374151",
+              cursor: "pointer",
+            }}
+          />
+
+          <Menu
+            anchorEl={anchorElOwner}
+            open={openOwnerMenu}
+            onClose={() => setAnchorElOwner(null)}
+          >
+            {owners.map((o) => (
+              <MenuItem key={o.id_owner} onClick={() => handleOwnerSelect(o)}>
+                <Avatar
+                  src={o.profile_pic || ""}
+                  sx={{ width: 24, height: 24, mr: 1 }}
+                >
+                  {o.nombre?.[0]}
+                </Avatar>
+                <Box>
+                  <Typography variant="body2">
+                    {o.nombre} {o.apellidos}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ fontSize: "0.7rem" }}
+                  >
+                    {o.rol}
+                  </Typography>
+                </Box>
+              </MenuItem>
+            ))}
+          </Menu>
         </Box>
+
+        {selectedOwner && (
+          <Card
+            sx={{
+              mb: 3,
+              borderRadius: 3,
+              background: "linear-gradient(45deg, #6A11CB, #2575FC)",
+              color: "white",
+            }}
+          >
+            <CardHeader
+              avatar={
+                <Avatar
+                  src={selectedOwner.profile_pic || ""}
+                  sx={{ bgcolor: "#ffffff33" }}
+                >
+                  {selectedOwner.nombre?.[0] || "O"}
+                </Avatar>
+              }
+              title={`${selectedOwner.nombre} ${selectedOwner.apellidos}`}
+              subheader={selectedOwner.rol}
+              subheaderTypographyProps={{ sx: { color: "#e0e0e0" } }}
+              action={
+                <Button
+                  onClick={handleClearOwner}
+                  sx={{
+                    color: "white",
+                    textTransform: "none",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  Quitar filtro
+                </Button>
+              }
+            />
+            <CardContent sx={{ pt: 0 }}>
+              <Typography variant="body2">
+                📧 {selectedOwner.email || "Sin correo"}
+              </Typography>
+              <Typography variant="body2">
+                📞 {selectedOwner.telefono || "Sin teléfono"}
+              </Typography>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabla de contactos (sin cambios grandes de estilo aquí, sigue moderna) */}
         <TableContainer
